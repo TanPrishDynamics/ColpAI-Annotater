@@ -216,3 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---- ColpAi-Annotater project-specific ----
+# macOS folder metadata
+.DS_Store
+
+# SQLite annotation database (local data, not source)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Uploaded / ingested images (patient data — never commit)
+data/uploads/

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Login - ColpAI{% endblock %}
+{% block body %}
+<main style="max-width: 400px; margin: 80px auto; padding: 0 24px;">
+    <div class="card">
+        <h2 style="text-align: center; margin-bottom: 24px;">ColpAI Annotator</h2>
+        <div id="alert"></div>
+        <form id="loginForm">
+            <div class="field">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" autofocus required>
+            </div>
+            <div class="field">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit" style="width: 100%;">Sign in</button>
+        </form>
+        <p class="muted" style="margin-top: 20px; text-align: center;">
+            No account? Run <code>python -m scripts.create_user</code> in your terminal.
+        </p>
+    </div>
+</main>
+<script>
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    const alertBox = document.getElementById('alert');
+    alertBox.innerHTML = '';
+
+    try {
+        const res = await fetch('/api/v1/auth/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username, password}),
+            credentials: 'same-origin',
+        });
+        const data = await res.json();
+        if (res.ok) {
+            window.location.href = '/dashboard';
+        } else {
+            alertBox.innerHTML = `<div class="alert error">${data.error?.message || 'Login failed'}</div>`;
+        }
+    } catch (err) {
+        alertBox.innerHTML = `<div class="alert error">Network error: ${err.message}</div>`;
+    }
+});
+</script>
+{% endblock %}

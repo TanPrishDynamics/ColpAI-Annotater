@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% block title %}Admin - ColpAI{% endblock %}
+{% block body %}
+<style>
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    th { color: var(--fg-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+    .role-pill { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+    .role-admin { background: #8a4fbf33; color: #c59bff; }
+    .role-reviewer { background: #4f8cff33; color: #9cc0ff; }
+    .role-annotator { background: #46c98b33; color: #8fe3bd; }
+    .pill-off { background: #ff5b5b22; color: var(--danger); padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+    .pill-on { color: var(--success); font-size: 12px; }
+    .row-actions button { padding: 4px 10px; font-size: 12px; margin-right: 4px; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; }
+    .dl-grid { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .dl-grid label { margin-bottom: 4px; }
+    .dl-grid select { width: auto; }
+</style>
+<header>
+    <h1>ColpAI &middot; Admin</h1>
+    <div class="user-bar">
+        <span>{{ user.username }} <span class="muted">(admin)</span></span>
+        <a href="/dashboard" class="btn secondary">Dashboard</a>
+        <a href="/review" class="btn secondary">Review</a>
+        <button class="secondary" onclick="logout()">Logout</button>
+    </div>
+</header>
+<main>
+    <div id="flash"></div>
+
+    <div class="card">
+        <h2>Add a doctor / user</h2>
+        <p class="muted" style="margin-top:0;">Create a login and share the username + password with the person. They sign in at this same site.</p>
+        <div class="form-grid">
+            <div><label>Username</label><input id="nuUsername" placeholder="dr_smith"></div>
+            <div><label>Full name</label><input id="nuFullName" placeholder="Dr. Jane Smith"></div>
+            <div><label>Temporary password</label><input id="nuPassword" type="text" placeholder="min 6 chars"></div>
+            <div><label>Role</label>
+                <select id="nuRole">
+                    <option value="annotator" selected>Annotator (doctor)</option>
+                    <option value="reviewer">Reviewer</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div><button onclick="createUser()">Create login</button></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Upload images for annotation</h2>
+        <p class="muted" style="margin-top:0;">Add new images into a dataset. They show up in the annotation queue right away. Duplicates (same image) are skipped automatically.</p>
+        <div class="form-grid">
+            <div><label>Dataset name</label><input id="upDataset" placeholder="e.g. clinic_batch_june"></div>
+            <div style="grid-column: 1 / -1;">
+                <label>Images (JPG / PNG / TIFF / BMP) — select multiple</label>
+                <input id="upFiles" type="file" accept="image/*" multiple>
+            </div>
+            <div><button id="upBtn" onclick="uploadImages()">Upload</button></div>
+        </div>
+        <div id="upProgress" class="muted" style="margin-top:10px;"></div>
+        <div id="upResult" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="card">
+        <h2>Users &amp; progress</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>User</th><th>Role</th><th>Status</th>
+                    <th>Submitted</th><th>Reviewed</th><th>Drafts</th><th>Images</th>
+                    <th>Last login</th><th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="userRows"><tr><td colspan="9" class="muted">Loading...</td></tr></tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Download annotations</h2>
+        <p class="muted" style="margin-top:0;">Pick a dataset and which annotations to include, then download.</p>
+        <div class="dl-grid" style="margin-bottom:14px;">
+            <div><label>Dataset</label>
+                <select id="dlDataset"><option value="">All datasets</option></select>
+            </div>
+            <div><label>Annotations</label>
+                <select id="dlStatus">
+                    <option value="reviewed">Reviewed only</option>
+                    <option value="submitted" selected>Submitted &amp; better</option>
+                    <option value="all">All (non-draft)</option>
+                </select>
+            </div>
+            <div id="dlSummary" class="muted" style="padding-bottom:8px;"></div>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button onclick="dl('bundle')" title="Images + overlays + labels">Full bundle (images + labels) &darr;</button>
+            <button class="secondary" onclick="dl('csv', {level:'image'})">CSV (per image)</button>
+            <button class="secondary" onclick="dl('csv', {level:'region'})">CSV (per region)</button>
+            <button class="secondary" onclick="dl('coco')">COCO JSON</button>
+            <button class="secondary" onclick="dl('yolo')">YOLO (zip)</button>
+            <button class="secondary" onclick="dl('masks')">Masks (zip)</button>
+        </div>
+    </div>
+</main>
+
+<script>
+async function api(path, opts = {}) {
+    const res = await fetch(path, {
+        credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json', ...(opts.headers || {})},
+        ...opts,
+    });
+    if (!res.ok) {
+        let body = null; try { body = await res.json(); } catch (_) {}
+        throw new Error(body?.error?.message || `HTTP ${res.status}`);
+    }
+    return res.status === 204 ? null : res.json();
+}
+
+function flash(msg, kind = 'success') {
+    const el = document.getElementById('flash');
+    el.innerHTML = `<div class="alert ${kind}">${msg}</div>`;
+    setTimeout(() => { el.innerHTML = ''; }, 5000);
+}
+
+const ROLE_CLASS = {admin: 'role-admin', reviewer: 'role-reviewer', annotator: 'role-annotator'};
+
+async function loadUsers() {
+    const d = await api('/api/v1/admin/users');
+    const rows = d.items.map(u => {
+        const p = u.progress;
+        const status = u.is_active
+            ? '<span class="pill-on">&#9679; active</span>'
+            : '<span class="pill-off">disabled</span>';
+        const toggle = u.is_active
+            ? `<button class="danger" onclick="setActive('${u.id}', false)">Disable</button>`
+            : `<button class="secondary" onclick="setActive('${u.id}', true)">Enable</button>`;
+        return `<tr>
+            <td><strong>${u.username}</strong><div class="muted">${u.full_name || ''}</div></td>
+            <td><span class="role-pill ${ROLE_CLASS[u.role]}">${u.role}</span></td>
+            <td>${status}</td>
+            <td>${p.submitted}</td><td>${p.reviewed}</td><td>${p.drafts}</td><td>${p.images}</td>
+            <td class="muted">${u.last_login ? new Date(u.last_login).toLocaleDateString() : 'never'}</td>
+            <td class="row-actions">${toggle}
+                <button class="secondary" onclick="resetPw('${u.id}', '${u.username}')">Reset pw</button></td>
+        </tr>`;
+    });
+    document.getElementById('userRows').innerHTML = rows.join('') ||
+        '<tr><td colspan="9" class="muted">No users.</td></tr>';
+}
+
+async function createUser() {
+    const body = {
+        username: document.getElementById('nuUsername').value.trim(),
+        full_name: document.getElementById('nuFullName').value.trim() || null,
+        password: document.getElementById('nuPassword').value,
+        role: document.getElementById('nuRole').value,
+    };
+    try {
+        await api('/api/v1/admin/users', {method: 'POST', body: JSON.stringify(body)});
+        flash(`Created login "${body.username}". Share the username + password with them.`);
+        document.getElementById('nuUsername').value = '';
+        document.getElementById('nuFullName').value = '';
+        document.getElementById('nuPassword').value = '';
+        loadUsers();
+    } catch (e) { flash(e.message, 'error'); }
+}
+
+async function setActive(id, active) {
+    if (!active && !confirm('Disable this account? They will be unable to log in.')) return;
+    try {
+        await api(`/api/v1/admin/users/${id}`, {method: 'PATCH', body: JSON.stringify({is_active: active})});
+        flash(active ? 'Account enabled.' : 'Account disabled.');
+        loadUsers();
+    } catch (e) { flash(e.message, 'error'); }
+}
+
+async function resetPw(id, username) {
+    const pw = prompt(`New password for ${username} (min 6 chars):`);
+    if (!pw) return;
+    try {
+        await api(`/api/v1/admin/users/${id}`, {method: 'PATCH', body: JSON.stringify({password: pw})});
+        flash(`Password reset for ${username}.`);
+    } catch (e) { flash(e.message, 'error'); }
+}
+
+// ----- image upload -----
+async function uploadImages() {
+    const dataset = document.getElementById('upDataset').value.trim();
+    const input = document.getElementById('upFiles');
+    const files = input.files;
+    const progress = document.getElementById('upProgress');
+    const result = document.getElementById('upResult');
+    result.innerHTML = '';
+
+    if (!dataset) { flash('Enter a dataset name first.', 'error'); return; }
+    if (!files.length) { flash('Choose one or more image files.', 'error'); return; }
+
+    const fd = new FormData();
+    fd.append('dataset', dataset);
+    for (const f of files) fd.append('files', f);
+
+    const btn = document.getElementById('upBtn');
+    btn.disabled = true;
+    progress.textContent = `Uploading ${files.length} file(s)...`;
+    try {
+        // Note: no Content-Type header -- the browser sets the multipart boundary.
+        const res = await fetch('/api/v1/admin/images/upload', {
+            method: 'POST', credentials: 'same-origin', body: fd,
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d?.error?.message || `HTTP ${res.status}`);
+        const c = d.counts;
+        result.innerHTML = `<div class="alert success">Added ${c.ingested} new image(s) to "${d.dataset}". `
+            + `${c.duplicate} duplicate(s) skipped, ${c.error} error(s).</div>`;
+        const errs = d.results.filter(r => r.status === 'error');
+        if (errs.length) {
+            result.innerHTML += '<div class="muted">' +
+                errs.map(e => `${e.filename}: ${e.message}`).join('<br>') + '</div>';
+        }
+        input.value = '';
+        flash(`Uploaded ${c.ingested} image(s).`);
+        refreshDatasetDropdowns();   // so the new dataset appears in the download picker
+    } catch (e) {
+        flash(e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        progress.textContent = '';
+    }
+}
+
+// ----- downloads -----
+function dlParams() {
+    const params = new URLSearchParams();
+    const ds = document.getElementById('dlDataset').value;
+    if (ds) params.set('dataset', ds);
+    params.set('status', document.getElementById('dlStatus').value);
+    return params;
+}
+function dl(format, extra = {}) {
+    const params = dlParams();
+    for (const [k, v] of Object.entries(extra)) params.set(k, v);
+    window.location.href = `/api/v1/export/${format}?` + params;
+}
+async function loadDlSummary() {
+    const el = document.getElementById('dlSummary');
+    el.textContent = 'Counting...';
+    try {
+        const d = await api('/api/v1/export/summary?' + dlParams());
+        el.textContent = `${d.image_count.toLocaleString()} images, ${d.region_count.toLocaleString()} regions`;
+    } catch (e) { el.textContent = ''; }
+}
+async function refreshDatasetDropdowns() {
+    try {
+        const d = await api('/api/v1/images/datasets');
+        const sel = document.getElementById('dlDataset');
+        const current = sel.value;
+        sel.innerHTML = '<option value="">All datasets</option>';
+        for (const name of d.datasets) {
+            const o = document.createElement('option');
+            o.value = name; o.textContent = name; sel.appendChild(o);
+        }
+        sel.value = current;
+        loadDlSummary();
+    } catch (e) {}
+}
+
+async function initDownloads() {
+    await refreshDatasetDropdowns();
+    document.getElementById('dlDataset').addEventListener('change', loadDlSummary);
+    document.getElementById('dlStatus').addEventListener('change', loadDlSummary);
+}
+
+async function logout() {
+    await fetch('/api/v1/auth/logout', {method: 'POST', credentials: 'same-origin'});
+    window.location.href = '/login';
+}
+
+loadUsers().catch(e => flash(e.message, 'error'));
+initDownloads();
+</script>
+{% endblock %}

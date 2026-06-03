@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Forbidden - ColpAI{% endblock %}
+{% block body %}
+<main style="max-width: 480px; margin: 80px auto;">
+    <div class="card">
+        <h2>Access denied</h2>
+        <p class="muted">Reviewer or admin role required to view this page. You're signed in as <code>{{ user.username }}</code> ({{ user.role.value }}).</p>
+        <a href="/dashboard" class="btn">Back to dashboard</a>
+    </div>
+</main>
+{% endblock %}

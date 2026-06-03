@@ -1,0 +1,28 @@
+# ColpAI annotation platform - Python dependencies.
+#   pip install -r requirements.txt
+
+# --- Web framework ---
+Flask>=3.0,<4.0
+Flask-SQLAlchemy>=3.1
+Flask-Migrate>=4.0
+Flask-Login>=0.6
+Werkzeug>=3.0
+
+# --- Database / migrations ---
+SQLAlchemy>=2.0,<2.1
+alembic>=1.13
+
+# --- Validation ---
+pydantic>=2.6,<3.0
+
+# --- Imaging + exporters (Phase 3 masks, Phase 5 CSV/COCO/YOLO/mask exports) ---
+# numpy implements COCO-compatible uncompressed RLE so we avoid the native
+# pycocotools build; Pillow handles dimensions + mask/overlay rasterisation.
+Pillow>=10.2
+numpy>=1.26
+
+# --- CLI ---
+click>=8.1
+
+# --- Dev / tests ---
+pytest>=8.0

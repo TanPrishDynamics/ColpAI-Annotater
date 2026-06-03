@@ -1,0 +1,7 @@
+# Production dependency set. Install in the server virtualenv:
+#   pip install -r deploy/requirements-prod.txt
+
+-r ../requirements.txt
+
+# WSGI server for production (do not use Flask's dev server).
+gunicorn>=21.2

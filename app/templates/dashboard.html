@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - ColpAI{% endblock %}
+{% block body %}
+<style>
+    .stat-grid-2 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 16px;
+    }
+    .chart-wrap { position: relative; height: 280px; }
+    .chart-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 16px;
+    }
+    @media (max-width: 900px) { .chart-row { grid-template-columns: 1fr; } }
+    .badge-band {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        color: white;
+    }
+    .recent-row {
+        display: grid;
+        grid-template-columns: 56px 1fr auto;
+        gap: 12px;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border);
+    }
+    .recent-row img { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; background: #000; }
+    .recent-row .meta { font-size: 12px; color: var(--fg-muted); }
+    .dx-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        color: white;
+        font-weight: 600;
+        font-size: 11px;
+    }
+</style>
+<header>
+    <h1>ColpAI Annotator</h1>
+    <div class="user-bar">
+        <span>{{ user.username }} <span class="muted">({{ user.role.value }})</span></span>
+        {% if user.role.value in ['reviewer', 'admin'] %}
+            <a href="/review" class="btn secondary">Review</a>
+        {% endif %}
+        {% if user.role.value == 'admin' %}
+            <a href="/admin" class="btn secondary">Admin</a>
+        {% endif %}
+        <button class="secondary" onclick="logout()">Logout</button>
+    </div>
+</header>
+<main>
+    <div class="card">
+        <h2>Overview <span class="muted" id="scopeNote" style="font-weight:400; font-size:13px;"></span></h2>
+        <div class="stat-grid-2" id="stats"></div>
+        <div style="display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap;">
+            <a href="/annotate" class="btn">Start annotating &rarr;</a>
+            {% if user.role.value in ['reviewer', 'admin'] %}
+                <a href="/review" class="btn secondary">Open review queue</a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="chart-row">
+        <div class="card">
+            <h2>Diagnosis distribution</h2>
+            <div class="chart-wrap"><canvas id="distChart"></canvas></div>
+        </div>
+        <div class="card">
+            <h2>Inter-rater agreement</h2>
+            <div id="agreement" style="font-size: 14px;">Loading...</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Productivity (last 14 days)</h2>
+        <div class="chart-wrap" style="height: 240px;"><canvas id="prodChart"></canvas></div>
+    </div>
+
+    <div class="card">
+        <h2>Recent submissions</h2>
+        <div id="recent"><div class="muted">Loading...</div></div>
+    </div>
+
+    <div class="card">
+        <h2>Datasets</h2>
+        <div id="datasets" class="muted">Loading...</div>
+    </div>
+
+    {% if user.role.value in ['reviewer', 'admin'] %}
+    <div class="card">
+        <h2>Export dataset</h2>
+        <p class="muted" style="font-size: 13px; margin-top: 0;">
+            Export annotations as training-ready files. The same selection feeds every format.
+        </p>
+        <div style="display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; align-items: flex-end;">
+            <label style="font-size: 12px; color: var(--fg-muted);">Dataset<br>
+                <select id="exportDataset"><option value="">All datasets</option></select>
+            </label>
+            <label style="font-size: 12px; color: var(--fg-muted);">Annotations<br>
+                <select id="exportStatus">
+                    <option value="reviewed">Reviewed only</option>
+                    <option value="submitted" selected>Submitted &amp; better</option>
+                    <option value="all">All (non-draft)</option>
+                </select>
+            </label>
+            <div id="exportSummary" class="muted" style="font-size: 13px; padding-bottom: 6px;"></div>
+        </div>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <button class="secondary" onclick="downloadExport('csv', {level:'image'})">CSV (per image)</button>
+            <button class="secondary" onclick="downloadExport('csv', {level:'region'})">CSV (per region)</button>
+            <button class="secondary" onclick="downloadExport('coco')">COCO JSON</button>
+            <button class="secondary" onclick="downloadExport('yolo')">YOLO (zip)</button>
+            <button class="secondary" onclick="downloadExport('masks')">Masks (zip)</button>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <h2>Browse images</h2>
+        <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+            <select id="phaseFilter">
+                <option value="">All phases</option>
+                <option value="native">Native</option>
+                <option value="via">VIA</option>
+                <option value="vili">VILI</option>
+                <option value="green_filter">Green filter</option>
+            </select>
+            <select id="statusFilter">
+                <option value="all">All</option>
+                <option value="unannotated" selected>Unannotated by me</option>
+                <option value="mine">Submitted by me</option>
+            </select>
+            <button class="secondary" onclick="loadImages()">Refresh</button>
+        </div>
+        <div id="imageGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px;"></div>
+    </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const LABEL_COLOR = {
+    NORMAL: '#2e9a5a', CIN1: '#c9a531', CIN2: '#cf7a31',
+    CIN3: '#c84a3a', AIS: '#8a4fbf', INVASIVE_CANCER: '#7a1f1f',
+};
+const BAND_COLOR = {
+    'worse than chance': '#7a1f1f',
+    'slight': '#c84a3a',
+    'fair': '#cf7a31',
+    'moderate': '#c9a531',
+    'substantial': '#2e9a5a',
+    'almost perfect': '#1f6f3a',
+};
+
+async function api(path) {
+    const res = await fetch(path, {credentials: 'same-origin'});
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+}
+
+async function loadStats() {
+    const d = await api('/api/v1/dashboard/stats');
+    document.getElementById('scopeNote').textContent = d.scope === 'site' ? '(site-wide)' : '(your activity)';
+    const fields = [
+        ['Total images', d.total_images],
+        ['Submitted', d.submitted_annotations],
+        ['Reviewed', d.reviewed_annotations],
+        ['Drafts in progress', d.drafts_in_progress],
+        ['Images with annotations', d.images_with_annotations],
+    ];
+    if (d.scope === 'site') {
+        fields.push(['Active annotators', d.active_annotators]);
+        fields.push(['Avg raters/image', d.average_raters_per_image ?? '-']);
+    }
+    document.getElementById('stats').innerHTML = fields.map(([label, value]) => `
+        <div class="stat">
+            <div class="label">${label}</div>
+            <div class="value">${(value ?? 0).toLocaleString ? value.toLocaleString() : value}</div>
+        </div>
+    `).join('');
+}
+
+let distChart;
+async function loadDistribution() {
+    const d = await api('/api/v1/dashboard/distribution');
+    const labels = d.items.map(x => x.label);
+    const data = d.items.map(x => x.count);
+    const colors = labels.map(l => LABEL_COLOR[l] || '#7aa3ff');
+    const ctx = document.getElementById('distChart').getContext('2d');
+    if (distChart) distChart.destroy();
+    distChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {labels, datasets: [{data, backgroundColor: colors, borderWidth: 0}]},
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {position: 'right', labels: {color: '#e6e8ee'}},
+            },
+        },
+    });
+}
+
+async function loadAgreement() {
+    const d = await api('/api/v1/dashboard/agreement');
+    const el = document.getElementById('agreement');
+    if (d.mean_kappa == null) {
+        el.innerHTML = '<div class="muted">Not enough multi-rater data yet (need 2+ annotators on the same images).</div>';
+        return;
+    }
+    const bandColor = BAND_COLOR[d.interpretation] || '#7aa3ff';
+    el.innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div>
+                <div class="muted" style="font-size: 12px;">Mean Cohen's kappa</div>
+                <div style="font-size: 32px; font-weight: 600; line-height: 1;">${d.mean_kappa.toFixed(3)}</div>
+                <div style="margin-top: 6px;"><span class="badge-band" style="background:${bandColor}">${d.interpretation}</span></div>
+            </div>
+            <div>
+                <div class="muted" style="font-size: 12px;">Mean % agreement</div>
+                <div style="font-size: 32px; font-weight: 600; line-height: 1;">${(d.mean_percent_agreement * 100).toFixed(1)}%</div>
+                <div class="muted" style="font-size: 12px; margin-top: 6px;">${d.multi_rater_images} multi-rater images, ${d.rater_count} raters</div>
+            </div>
+        </div>
+        <div class="muted" style="font-size: 12px; margin-top: 12px;">Target: kappa &gt; 0.75 for substantial agreement.</div>
+    `;
+}
+
+let prodChart;
+async function loadProductivity() {
+    const d = await api('/api/v1/dashboard/productivity?days=14');
+    // Build a unified set of dates across all series.
+    const allDates = new Set();
+    for (const s of d.series) for (const p of s.points) allDates.add(p.date);
+    const dates = [...allDates].sort();
+    const palette = ['#4f8cff', '#46c98b', '#e0a83a', '#c84a3a', '#8a4fbf', '#cf7a31'];
+    const datasets = d.series.map((s, i) => {
+        const map = Object.fromEntries(s.points.map(p => [p.date, p.count]));
+        return {
+            label: s.annotator,
+            data: dates.map(d => map[d] || 0),
+            backgroundColor: palette[i % palette.length],
+            borderColor: palette[i % palette.length],
+        };
+    });
+    const ctx = document.getElementById('prodChart').getContext('2d');
+    if (prodChart) prodChart.destroy();
+    prodChart = new Chart(ctx, {
+        type: 'bar',
+        data: {labels: dates, datasets},
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {stacked: true, ticks: {color: '#8b91a0'}, grid: {color: '#2a2f3a'}},
+                y: {stacked: true, beginAtZero: true, ticks: {color: '#8b91a0'}, grid: {color: '#2a2f3a'}},
+            },
+            plugins: {legend: {labels: {color: '#e6e8ee'}}},
+        },
+    });
+}
+
+async function loadRecent() {
+    const d = await api('/api/v1/dashboard/recent?limit=8');
+    const el = document.getElementById('recent');
+    if (!d.items.length) {
+        el.innerHTML = '<div class="muted">No submissions yet.</div>';
+        return;
+    }
+    el.innerHTML = d.items.map(a => {
+        const dx = a.diagnosis?.colposcopic_impression;
+        const color = LABEL_COLOR[dx] || '#7aa3ff';
+        return `
+            <a href="/annotate/${a.image_id}" style="text-decoration:none; color:inherit;">
+                <div class="recent-row">
+                    <img src="/api/v1/images/${a.image_id}/file" alt="">
+                    <div>
+                        <div>${dx ? `<span class="dx-badge" style="background:${color}">${dx}</span>` : '<span class="muted">(no dx)</span>'} ${a.annotator_username ? `<span class="muted" style="font-size:12px;">by ${a.annotator_username}</span>` : ''}</div>
+                        <div class="meta">${a.submitted_at ? new Date(a.submitted_at).toLocaleString() : '-'}</div>
+                    </div>
+                    <div class="meta">v${a.version}</div>
+                </div>
+            </a>`;
+    }).join('');
+}
+
+async function loadDatasets() {
+    const res = await fetch('/api/v1/images/datasets', {credentials: 'same-origin'});
+    if (!res.ok) return;
+    const d = await res.json();
+    const el = document.getElementById('datasets');
+    if (!d.datasets.length) {
+        el.innerHTML = '<em>No images ingested yet.</em>';
+    } else {
+        el.innerHTML = d.datasets.map(name => `<code style="margin-right:8px;">${name}</code>`).join('');
+    }
+}
+
+async function loadImages() {
+    const phase = document.getElementById('phaseFilter').value;
+    const status = document.getElementById('statusFilter').value;
+    const params = new URLSearchParams({limit: 24, status});
+    if (phase) params.set('phase', phase);
+    const res = await fetch('/api/v1/images?' + params, {credentials: 'same-origin'});
+    const grid = document.getElementById('imageGrid');
+    if (!res.ok) {
+        grid.innerHTML = '<div class="alert error">Failed to load images.</div>';
+        return;
+    }
+    const d = await res.json();
+    if (!d.items.length) {
+        grid.innerHTML = '<div class="muted">No images match this filter.</div>';
+        return;
+    }
+    grid.innerHTML = d.items.map(img => `
+        <a href="/annotate/${img.id}" style="background: var(--surface-2); border-radius: 8px; overflow: hidden; text-decoration: none; color: inherit; display: block;">
+            <img src="/api/v1/images/${img.id}/file" alt="" loading="lazy"
+                 style="width: 100%; height: 140px; object-fit: cover; display: block; background: #000;"
+                 onerror="this.style.display='none'">
+            <div style="padding: 8px; font-size: 11px;">
+                <div style="color: var(--fg-muted);">${img.dataset_source}</div>
+                <div style="color: var(--fg-muted);">${img.image_phase || 'no phase'} - ${img.image_resolution || '?'}</div>
+            </div>
+        </a>
+    `).join('');
+}
+
+function exportParams() {
+    const params = new URLSearchParams();
+    const ds = document.getElementById('exportDataset').value;
+    const status = document.getElementById('exportStatus').value;
+    if (ds) params.set('dataset', ds);
+    params.set('status', status);
+    return params;
+}
+
+async function loadExportSummary() {
+    const el = document.getElementById('exportSummary');
+    if (!el) return;
+    el.textContent = 'Counting...';
+    try {
+        const d = await api('/api/v1/export/summary?' + exportParams());
+        el.textContent = `${d.image_count.toLocaleString()} images, ${d.region_count.toLocaleString()} regions`;
+    } catch (e) {
+        el.textContent = 'Could not load summary.';
+    }
+}
+
+function downloadExport(format, extra = {}) {
+    const params = exportParams();
+    for (const [k, v] of Object.entries(extra)) params.set(k, v);
+    window.location.href = `/api/v1/export/${format}?` + params;
+}
+
+async function initExport() {
+    const sel = document.getElementById('exportDataset');
+    if (!sel) return;  // not a reviewer/admin
+    try {
+        const d = await api('/api/v1/images/datasets');
+        for (const name of d.datasets) {
+            const opt = document.createElement('option');
+            opt.value = name; opt.textContent = name;
+            sel.appendChild(opt);
+        }
+    } catch (e) { /* leave "All datasets" only */ }
+    sel.addEventListener('change', loadExportSummary);
+    document.getElementById('exportStatus').addEventListener('change', loadExportSummary);
+    loadExportSummary();
+}
+
+async function logout() {
+    await fetch('/api/v1/auth/logout', {method: 'POST', credentials: 'same-origin'});
+    window.location.href = '/login';
+}
+
+async function boot() {
+    loadStats().catch(e => console.error(e));
+    loadDistribution().catch(e => console.error(e));
+    loadAgreement().catch(e => console.error(e));
+    loadProductivity().catch(e => console.error(e));
+    loadRecent().catch(e => console.error(e));
+    loadDatasets().catch(e => console.error(e));
+    loadImages().catch(e => console.error(e));
+    initExport().catch(e => console.error(e));
+}
+boot();
+</script>
+{% endblock %}

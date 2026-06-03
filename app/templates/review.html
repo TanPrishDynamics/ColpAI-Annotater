@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Review - ColpAI{% endblock %}
+{% block body %}
+<style>
+    .review-shell {
+        display: grid;
+        grid-template-columns: 300px minmax(0, 1fr) 360px;
+        grid-template-rows: auto 1fr auto;
+        height: 100vh;
+        max-width: none;
+        padding: 0;
+        margin: 0;
+    }
+    .review-shell > header { grid-column: 1 / -1; }
+
+    .queue {
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+        overflow-y: auto;
+    }
+    .queue h3 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--fg-muted);
+        padding: 14px 16px;
+        margin: 0;
+        border-bottom: 1px solid var(--border);
+    }
+    .queue-item {
+        display: grid;
+        grid-template-columns: 48px 1fr;
+        gap: 10px;
+        padding: 8px 16px;
+        cursor: pointer;
+        align-items: center;
+        border-bottom: 1px solid var(--border);
+    }
+    .queue-item:hover { background: var(--surface-2); }
+    .queue-item[aria-selected="true"] { background: var(--surface-2); border-left: 3px solid var(--accent); padding-left: 13px; }
+    .queue-item img { width: 48px; height: 48px; object-fit: cover; border-radius: 4px; background: #000; }
+    .queue-item .meta { font-size: 11px; color: var(--fg-muted); }
+    .queue-item .label { font-weight: 600; font-size: 13px; }
+
+    .viewer {
+        background: #000;
+        position: relative;
+        overflow: hidden;
+    }
+    .viewer img {
+        position: absolute;
+        inset: 0;
+        margin: auto;
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+    }
+    .viewer-empty {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        color: var(--fg-muted); font-size: 14px;
+    }
+    .viewer-empty[data-show="false"] { display: none; }
+    .region-overlay {
+        position: absolute; inset: 0;
+        pointer-events: none;
+    }
+
+    .side {
+        background: var(--surface);
+        border-left: 1px solid var(--border);
+        overflow-y: auto;
+    }
+    .side .group { border-bottom: 1px solid var(--border); padding: 16px 20px; }
+    .side h4 {
+        font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px;
+        color: var(--fg-muted); margin: 0 0 10px;
+    }
+    .kv {
+        display: grid;
+        grid-template-columns: 130px 1fr;
+        gap: 4px 12px;
+        font-size: 13px;
+    }
+    .kv .k { color: var(--fg-muted); }
+    .kv .v { color: var(--fg); font-variant-numeric: tabular-nums; }
+
+    .dx-badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        color: white;
+        font-weight: 600;
+        font-size: 12px;
+    }
+
+    .review-actions {
+        grid-column: 1 / -1;
+        background: var(--surface);
+        border-top: 1px solid var(--border);
+        padding: 14px 24px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .review-actions .right { display: flex; gap: 12px; }
+    .review-actions textarea {
+        background: var(--surface-2);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 13px;
+        width: 320px;
+        height: 38px;
+        resize: none;
+        font-family: inherit;
+    }
+    .empty-q { padding: 24px 16px; color: var(--fg-muted); font-size: 13px; }
+</style>
+
+<div class="review-shell">
+    <header>
+        <h1>ColpAI Review</h1>
+        <div class="user-bar">
+            <span id="queueCount" class="progress">- pending</span>
+            <span>{{ user.username }} <span class="muted">({{ user.role.value }})</span></span>
+            <a href="/dashboard" class="btn secondary">Dashboard</a>
+        </div>
+    </header>
+
+    <nav class="queue">
+        <h3>Queue</h3>
+        <div id="queueList"><div class="empty-q">Loading...</div></div>
+    </nav>
+
+    <div class="viewer" id="viewer">
+        <div class="viewer-empty" id="viewerEmpty" data-show="true">Select an annotation to review.</div>
+        <img id="reviewImg" alt="" style="display:none;">
+        <svg class="region-overlay" id="regionOverlay" preserveAspectRatio="none"></svg>
+    </div>
+
+    <aside class="side" id="side">
+        <div class="empty-q">No annotation selected.</div>
+    </aside>
+
+    <div class="review-actions">
+        <div class="muted" id="annotatorLine">No annotation selected.</div>
+        <div class="right">
+            <textarea id="reviewComment" placeholder="Comment (optional for approve; recommended for reject)"></textarea>
+            <button class="danger" id="rejectBtn" disabled>Reject</button>
+            <button id="approveBtn" disabled>Approve</button>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/review.js') }}"></script>
+{% endblock %}

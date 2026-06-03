@@ -1,0 +1,556 @@
+{% extends "base.html" %}
+{% block title %}Annotate - ColpAI{% endblock %}
+{% block body %}
+<style>
+    .annotate-shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 380px;
+        grid-template-rows: auto 1fr auto;
+        height: 100vh;
+        max-width: none;
+        padding: 0;
+        margin: 0;
+    }
+    .annotate-shell > header {
+        grid-column: 1 / -1;
+    }
+    .progress { font-variant-numeric: tabular-nums; }
+    .pill {
+        font-size: 12px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--surface-2);
+        color: var(--fg-muted);
+        border: 1px solid var(--border);
+    }
+    .pill.saving { color: var(--accent); border-color: var(--accent); }
+    .pill.saved { color: var(--success); border-color: var(--success); }
+    .pill.unsaved { color: #e0a83a; border-color: #e0a83a; }
+    .pill.error { color: var(--danger); border-color: var(--danger); }
+
+    .stage-wrap {
+        background: #000;
+        position: relative;
+        overflow: hidden;
+        filter: var(--img-filter, none);
+    }
+    #stage { width: 100%; height: 100%; }
+    .viewer-empty {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--fg-muted);
+        font-size: 14px;
+        text-align: center;
+        padding: 32px;
+    }
+    .viewer-empty[data-show="false"] { display: none; }
+
+    .tool-dock {
+        position: absolute;
+        top: 16px;
+        left: 16px;
+        display: flex;
+        gap: 6px;
+        background: rgba(15, 17, 21, 0.85);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 6px;
+        backdrop-filter: blur(4px);
+        z-index: 5;
+    }
+    .tool-dock button {
+        background: var(--surface-2);
+        color: var(--fg);
+        border: 1px solid transparent;
+        padding: 8px 12px;
+        font-size: 12px;
+        min-width: 38px;
+    }
+    .tool-dock button[aria-pressed="true"] {
+        background: var(--accent);
+        color: white;
+        border-color: var(--accent);
+    }
+    .tool-dock .sep {
+        width: 1px;
+        background: var(--border);
+        margin: 4px 2px;
+    }
+
+    .viewer-controls {
+        position: absolute;
+        bottom: 16px;
+        left: 16px;
+        right: 16px;
+        background: rgba(15, 17, 21, 0.75);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 14px;
+        display: grid;
+        grid-template-columns: auto 1fr auto 1fr auto;
+        gap: 10px 14px;
+        align-items: center;
+        font-size: 12px;
+        color: var(--fg-muted);
+        backdrop-filter: blur(4px);
+        z-index: 5;
+    }
+    .viewer-controls input[type="range"] { width: 100%; padding: 0; }
+
+    .side {
+        background: var(--surface);
+        border-left: 1px solid var(--border);
+        overflow-y: auto;
+        padding: 0;
+    }
+    .side .group { border-bottom: 1px solid var(--border); }
+    .side details > summary {
+        cursor: pointer;
+        list-style: none;
+        padding: 14px 20px;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--fg-muted);
+        font-weight: 600;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .side details > summary::-webkit-details-marker { display: none; }
+    .side details > summary::after { content: '\25BE'; transition: transform 0.15s; }
+    .side details:not([open]) > summary::after { transform: rotate(-90deg); }
+    .side .group-body { padding: 0 20px 16px; }
+    .row { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg); padding: 6px 0; }
+    .check input { width: auto; }
+    select, input[type="number"], input[type="text"], textarea {
+        background: var(--surface-2);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 13px;
+        width: 100%;
+        font-family: inherit;
+    }
+    textarea { resize: vertical; min-height: 60px; }
+
+    .diagnosis-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+    }
+    .dx-btn {
+        background: var(--surface-2);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px 6px;
+        font-size: 13px;
+        cursor: pointer;
+        text-align: center;
+        font-weight: 600;
+    }
+    .dx-btn[aria-pressed="true"] { background: var(--accent); color: white; border-color: var(--accent); }
+    .dx-btn[data-dx="NORMAL"][aria-pressed="true"] { background: #2e9a5a; border-color: #2e9a5a; }
+    .dx-btn[data-dx="CIN1"][aria-pressed="true"] { background: #c9a531; border-color: #c9a531; }
+    .dx-btn[data-dx="CIN2"][aria-pressed="true"] { background: #cf7a31; border-color: #cf7a31; }
+    .dx-btn[data-dx="CIN3"][aria-pressed="true"] { background: #c84a3a; border-color: #c84a3a; }
+    .dx-btn[data-dx="AIS"][aria-pressed="true"] { background: #8a4fbf; border-color: #8a4fbf; }
+    .dx-btn[data-dx="INVASIVE_CANCER"][aria-pressed="true"] { background: #7a1f1f; border-color: #7a1f1f; }
+
+    .region-list { display: flex; flex-direction: column; gap: 6px; }
+    .region-row {
+        display: grid;
+        grid-template-columns: 14px 1fr auto;
+        gap: 10px;
+        align-items: center;
+        padding: 8px 10px;
+        background: var(--surface-2);
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        border: 1px solid transparent;
+    }
+    .region-row[aria-selected="true"] { border-color: var(--accent); }
+    .region-row .swatch { width: 12px; height: 12px; border-radius: 3px; }
+    .region-row .meta { color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+    .region-row button {
+        background: transparent;
+        color: var(--danger);
+        border: none;
+        padding: 2px 6px;
+        font-size: 14px;
+    }
+    .empty-list { color: var(--fg-muted); font-size: 12px; padding: 4px 0; }
+
+    .footer-bar {
+        grid-column: 1 / -1;
+        background: var(--surface);
+        border-top: 1px solid var(--border);
+        padding: 12px 24px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .footer-bar .left, .footer-bar .right { display: flex; gap: 10px; }
+    .label-row { display: flex; justify-content: space-between; align-items: center; }
+
+    .shortcut-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15,17,21,0.85);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 50;
+    }
+    .shortcut-overlay[data-open="true"] { display: flex; }
+    .shortcut-overlay .card { max-width: 520px; width: 100%; }
+    .shortcut-overlay table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .shortcut-overlay td { padding: 6px 4px; border-bottom: 1px solid var(--border); }
+    .shortcut-overlay kbd {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-family: 'SF Mono', monospace;
+        font-size: 12px;
+    }
+</style>
+
+<div class="annotate-shell">
+    <header>
+        <h1>ColpAI Annotator</h1>
+        <div class="user-bar">
+            <span class="progress" id="progress">- / -</span>
+            <span class="pill" id="statusPill">Idle</span>
+            <span>{{ user.username }} <span class="muted">({{ user.role.value }})</span></span>
+            <a href="/dashboard" class="btn secondary">Dashboard</a>
+        </div>
+    </header>
+
+    <div class="stage-wrap" id="stageWrap">
+        <div class="tool-dock" id="toolDock">
+            <button data-tool="pan" aria-pressed="true" title="V - Pan / select">Pan</button>
+            <button data-tool="bbox" aria-pressed="false" title="B - Bbox">Bbox</button>
+            <button data-tool="polygon" aria-pressed="false" title="P - Polygon">Polygon</button>
+            <button data-tool="mask" aria-pressed="false" title="M - Mask brush">Mask</button>
+            <span class="sep"></span>
+            <button id="undoBtn" title="Ctrl+Z - Undo">Undo</button>
+            <button id="redoBtn" title="Ctrl+Shift+Z - Redo">Redo</button>
+        </div>
+        <div class="brush-dock" id="brushDock" data-show="false"
+             style="position:absolute; top:52px; left:8px; z-index:5; display:none; gap:8px;
+                    align-items:center; background:var(--surface-2,#1b1f29); padding:6px 10px;
+                    border-radius:8px; font-size:12px;">
+            <label for="brushSize" style="color:var(--fg-muted);">Brush</label>
+            <input type="range" id="brushSize" min="4" max="120" value="28" style="width:90px;">
+            <span id="brushSizeLabel" style="color:var(--fg-muted); width:34px;">28px</span>
+            <button id="brushErase" class="secondary" aria-pressed="false"
+                    title="E - toggle eraser" style="padding:3px 10px;">Erase</button>
+            <button id="brushClear" class="secondary"
+                    title="Clear this mask" style="padding:3px 10px;">Clear</button>
+        </div>
+        <div id="stage"></div>
+        <div class="viewer-empty" id="viewerEmpty" data-show="true">No image loaded.</div>
+        <div class="viewer-controls">
+            <label for="brightness">Brightness</label>
+            <input type="range" id="brightness" min="50" max="200" value="100">
+            <label for="contrast">Contrast</label>
+            <input type="range" id="contrast" min="50" max="200" value="100">
+            <button class="secondary" id="resetView" style="padding: 4px 10px;">Reset view</button>
+        </div>
+    </div>
+
+    <aside class="side">
+        <div class="group">
+            <details open>
+                <summary>Image metadata</summary>
+                <div class="group-body">
+                    <div class="muted" id="meta" style="font-size: 12px; line-height: 1.7;">Loading...</div>
+                </div>
+            </details>
+        </div>
+
+        <div class="group">
+            <details open>
+                <summary>Diagnosis <span class="muted" style="text-transform: none; letter-spacing: 0;">required</span></summary>
+                <div class="group-body row">
+                    <div class="diagnosis-grid" id="dxGrid">
+                        <button type="button" class="dx-btn" data-dx="NORMAL">NORMAL</button>
+                        <button type="button" class="dx-btn" data-dx="CIN1">CIN1</button>
+                        <button type="button" class="dx-btn" data-dx="CIN2">CIN2</button>
+                        <button type="button" class="dx-btn" data-dx="CIN3">CIN3</button>
+                        <button type="button" class="dx-btn" data-dx="AIS">AIS</button>
+                        <button type="button" class="dx-btn" data-dx="INVASIVE_CANCER">INVASIVE</button>
+                    </div>
+                    <div>
+                        <div class="label-row"><label>Confidence</label><span class="muted" id="confidenceLabel">-</span></div>
+                        <input type="range" id="confidence" min="1" max="5" value="3" data-field="diagnosis.confidence">
+                    </div>
+                    <div>
+                        <label>Histopathology (optional)</label>
+                        <select data-field="diagnosis.histopathology_result">
+                            <option value="">- not available -</option>
+                            <option value="NORMAL">NORMAL</option>
+                            <option value="CIN1">CIN1</option>
+                            <option value="CIN2">CIN2</option>
+                            <option value="CIN3">CIN3</option>
+                            <option value="AIS">AIS</option>
+                            <option value="INVASIVE_CANCER">INVASIVE_CANCER</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Notes</label>
+                        <textarea data-field="diagnosis.notes" placeholder="Free-text observations..."></textarea>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <div class="group">
+            <details open>
+                <summary>Regions <span class="muted" style="text-transform: none; letter-spacing: 0;" id="regionCount">(0)</span></summary>
+                <div class="group-body">
+                    <div class="region-list" id="regionList">
+                        <div class="empty-list">No regions yet. Pick the Bbox or Polygon tool to draw.</div>
+                    </div>
+                    <div id="regionEditor" style="margin-top: 14px; display: none;">
+                        <div class="row">
+                            <div>
+                                <label>Lesion label</label>
+                                <select data-rfield="lesion_label">
+                                    <option value="">-</option>
+                                    <option value="NORMAL">NORMAL</option>
+                                    <option value="CIN1">CIN1</option>
+                                    <option value="CIN2">CIN2</option>
+                                    <option value="CIN3">CIN3</option>
+                                    <option value="AIS">AIS</option>
+                                    <option value="INVASIVE_CANCER">INVASIVE_CANCER</option>
+                                </select>
+                            </div>
+                            <div class="row-2">
+                                <div>
+                                    <label>Clock (1-12)</label>
+                                    <input type="number" min="1" max="12" data-rfield="lesion_location_clock">
+                                </div>
+                                <div>
+                                    <label>Size %</label>
+                                    <input type="number" min="0" max="100" data-rfield="lesion_size_percent">
+                                </div>
+                            </div>
+                            <div class="row-2">
+                                <div>
+                                    <label>Quadrant</label>
+                                    <select data-rfield="lesion_quadrant">
+                                        <option value="">-</option>
+                                        <option value="anterior">Anterior</option>
+                                        <option value="posterior">Posterior</option>
+                                        <option value="left_lateral">Left lateral</option>
+                                        <option value="right_lateral">Right lateral</option>
+                                        <option value="circumferential">Circumferential</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label>Margins</label>
+                                    <select data-rfield="lesion_margins">
+                                        <option value="">-</option>
+                                        <option value="sharp">Sharp</option>
+                                        <option value="irregular">Irregular</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="row-2">
+                                <label class="check"><input type="checkbox" data-rfield="punctation_present"> Punctation</label>
+                                <input type="number" min="1" max="3" placeholder="severity" data-rfield="punctation_severity">
+                            </div>
+                            <div class="row-2">
+                                <label class="check"><input type="checkbox" data-rfield="mosaic_present"> Mosaic</label>
+                                <input type="number" min="1" max="3" placeholder="severity" data-rfield="mosaic_severity">
+                            </div>
+                            <div>
+                                <label>Notes</label>
+                                <textarea data-rfield="region_notes" placeholder="Per-region observations..."></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <div class="group">
+            <details>
+                <summary>Quality</summary>
+                <div class="group-body row">
+                    <div>
+                        <label>Image quality</label>
+                        <select data-field="quality.image_quality">
+                            <option value="">-</option>
+                            <option value="excellent">Excellent</option>
+                            <option value="good">Good</option>
+                            <option value="fair">Fair</option>
+                            <option value="poor">Poor</option>
+                        </select>
+                    </div>
+                    <div class="row-2">
+                        <label class="check"><input type="checkbox" data-field="quality.blur_present"> Blur</label>
+                        <label class="check"><input type="checkbox" data-field="quality.blood_present"> Blood</label>
+                        <label class="check"><input type="checkbox" data-field="quality.mucus_present"> Mucus</label>
+                        <label class="check"><input type="checkbox" data-field="quality.specular_reflection_present"> Specular</label>
+                    </div>
+                    <div>
+                        <label>Lighting issue</label>
+                        <select data-field="quality.lighting_issue">
+                            <option value="">-</option>
+                            <option value="none">None</option>
+                            <option value="under">Underexposed</option>
+                            <option value="over">Overexposed</option>
+                            <option value="uneven">Uneven</option>
+                        </select>
+                    </div>
+                    <label class="check"><input type="checkbox" data-field="quality.usable_for_training"> Usable for training</label>
+                </div>
+            </details>
+        </div>
+
+        <div class="group">
+            <details>
+                <summary>Anatomy</summary>
+                <div class="group-body row">
+                    <div>
+                        <label>SCJ visibility</label>
+                        <select data-field="anatomy.scj_visibility">
+                            <option value="">-</option>
+                            <option value="fully_visible">Fully visible</option>
+                            <option value="partial">Partial</option>
+                            <option value="not_visible">Not visible</option>
+                        </select>
+                    </div>
+                    <div class="row-2">
+                        <div>
+                            <label>TZ type</label>
+                            <select data-field="anatomy.transformation_zone_type">
+                                <option value="">-</option>
+                                <option value="TZ1">TZ1</option>
+                                <option value="TZ2">TZ2</option>
+                                <option value="TZ3">TZ3</option>
+                                <option value="unknown">Unknown</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>TZ visibility</label>
+                            <select data-field="anatomy.tz_visibility">
+                                <option value="">-</option>
+                                <option value="fully_visible">Fully visible</option>
+                                <option value="partial">Partial</option>
+                                <option value="not_visible">Not visible</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <div class="group">
+            <details>
+                <summary>Global colposcopic features</summary>
+                <div class="group-body row">
+                    <div class="row-2">
+                        <div>
+                            <label>Acetowhitening (0-3)</label>
+                            <input type="number" min="0" max="3" data-field="features.acetowhitening_severity">
+                        </div>
+                        <div>
+                            <label>Iodine (0-2)</label>
+                            <input type="number" min="0" max="2" data-field="features.iodine_pattern">
+                        </div>
+                    </div>
+                    <div>
+                        <label>Vascular pattern</label>
+                        <select data-field="features.vascular_pattern">
+                            <option value="">-</option>
+                            <option value="normal">Normal</option>
+                            <option value="fine_punctation">Fine punctation</option>
+                            <option value="coarse_punctation">Coarse punctation</option>
+                            <option value="fine_mosaic">Fine mosaic</option>
+                            <option value="coarse_mosaic">Coarse mosaic</option>
+                            <option value="atypical">Atypical</option>
+                        </select>
+                    </div>
+                    <div class="row-2">
+                        <div>
+                            <label>Color tone</label>
+                            <select data-field="features.color_tone">
+                                <option value="">-</option>
+                                <option value="pink">Pink</option>
+                                <option value="pale">Pale</option>
+                                <option value="dense_white">Dense white</option>
+                                <option value="yellow">Yellow</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Surface contour</label>
+                            <select data-field="features.surface_contour">
+                                <option value="">-</option>
+                                <option value="smooth">Smooth</option>
+                                <option value="micropapillary">Micropapillary</option>
+                                <option value="nodular">Nodular</option>
+                                <option value="ulcerated">Ulcerated</option>
+                            </select>
+                        </div>
+                    </div>
+                    <label class="check"><input type="checkbox" data-field="features.atypical_vessels_present"> Atypical vessels present</label>
+                </div>
+            </details>
+        </div>
+    </aside>
+
+    <div class="footer-bar">
+        <div class="left">
+            <button class="secondary" id="prevBtn" title="[">&larr; Prev</button>
+            <button class="secondary" id="nextBtn" title="]">Next &rarr;</button>
+            <button class="secondary" id="shortcutsBtn" title="?">Shortcuts</button>
+        </div>
+        <div class="right">
+            <button class="danger" id="discardBtn">Discard</button>
+            <button class="secondary" id="skipBtn">Skip</button>
+            <button class="secondary" id="saveBtn" title="Ctrl+S">Save draft</button>
+            <button id="submitBtn" title="Enter">Submit &amp; next</button>
+        </div>
+    </div>
+</div>
+
+<div class="shortcut-overlay" id="shortcutOverlay" role="dialog">
+    <div class="card">
+        <h2>Keyboard shortcuts</h2>
+        <table>
+            <tr><td><kbd>1</kbd>-<kbd>6</kbd></td><td>Diagnosis: NORMAL / CIN1 / CIN2 / CIN3 / AIS / INVASIVE</td></tr>
+            <tr><td><kbd>V</kbd> / <kbd>B</kbd> / <kbd>P</kbd></td><td>Pan / Bbox / Polygon tool</td></tr>
+            <tr><td><kbd>Del</kbd></td><td>Delete selected region</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Redo</td></tr>
+            <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next image</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save draft</td></tr>
+            <tr><td><kbd>Enter</kbd></td><td>Submit &amp; next</td></tr>
+            <tr><td><kbd>D</kbd></td><td>Discard image</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>Cancel current tool / close overlay</td></tr>
+            <tr><td><kbd>?</kbd></td><td>Toggle this overlay</td></tr>
+        </table>
+        <button class="secondary" style="margin-top: 16px;" onclick="document.getElementById('shortcutOverlay').dataset.open='false'">Close</button>
+    </div>
+</div>
+
+<script>
+    const initialImageId = {{ image_id|default('null', true)|tojson }};
+    window.ANNOTATE_INIT = { initialImageId };
+</script>
+<script src="https://unpkg.com/konva@9/konva.min.js"></script>
+<script src="{{ url_for('static', filename='js/annotate.js') }}"></script>
+{% endblock %}

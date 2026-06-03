@@ -1,0 +1,37 @@
+# systemd unit for the ColpAI annotation server.
+# Install:
+#   sudo cp deploy/colpai.service /etc/systemd/system/colpai.service
+#   (edit paths/user below to match your server, then)
+#   sudo systemctl daemon-reload && sudo systemctl enable --now colpai
+#
+# Logs:   journalctl -u colpai -f
+# Reload: sudo systemctl restart colpai
+
+[Unit]
+Description=ColpAI annotation platform (gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=colpai
+Group=colpai
+
+# Absolute path to the checked-out repo on the server.
+WorkingDirectory=/opt/colpai/ColpAi-Annotater
+
+# Environment: secret key + prod config. Keep the secret in this file (chmod 600),
+# NOT in git. Generate the key with:
+#   python -c "import secrets; print(secrets.token_hex(32))"
+EnvironmentFile=/opt/colpai/colpai.env
+
+ExecStart=/opt/colpai/ColpAi-Annotater/venv/bin/gunicorn -c deploy/gunicorn.conf.py wsgi:app
+
+Restart=always
+RestartSec=3
+
+# Light hardening.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
