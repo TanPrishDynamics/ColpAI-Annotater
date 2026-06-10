@@ -1,494 +1,383 @@
-# Complete Annotation Pipeline & Dataset Guide
+# ColpAI Annotater — Annotation Guide
 
 ## Overview
 
-This guide explains your cervical cancer dataset, which parts require manual annotation, and how to use the complete annotation pipeline.
+ColpAI Annotater is a web-based platform for multi-annotator clinical labeling of cervical colposcopy images. It supports image-level annotations (quality, anatomy, diagnosis) and region-level lesion markup (bounding boxes, polygons, segmentation masks), a structured review and consensus workflow, and export to standard ML formats.
 
 ---
 
-## Part 1: Dataset Overview
+## Part 1: User Roles
 
-### Your Datasets (42,430 images total)
+| Role | What They Can Do |
+|------|-----------------|
+| **Annotator** | Create and submit annotations on assigned images; view own dashboard |
+| **Reviewer** | All annotator permissions + approve/reject submitted annotations; view site-wide stats; export data |
+| **Admin** | All reviewer permissions + create/disable users; upload images |
 
-| Dataset | Source | Images | Labels | Status |
-|---------|--------|--------|--------|--------|
-| **Intel MobileODT** | Kaggle Intel Challenge | ~8,500 | Partially labeled | Need annotation |
-| **Kaggle v4** | Kaggle Dataset | ~25,000 | Unlabeled | Need annotation |
-| **CIN 1:2:3** | Clinical dataset | ~8,930 | Unlabeled | Need annotation |
+### Creating Users (Admin CLI)
 
-### Image Types
-- **Single images**: Individual cervical colposcopy photos
-- **Format**: JPG images (224×224 to 2048×2048)
-- **Clinical context**: Each image is taken during colposcopy examination after acetic acid application
-
----
-
-## Part 2: What Requires Manual vs Automatic Annotation
-
-### Automatic Annotation (Auto-fills predictions)
-✅ **Recommended for:** Initial labeling of 42,430 images  
-✅ **What it does:** Vision Transformer model analyzes image patterns  
-✅ **Detects:**
-- Acetowhitening severity (0-3)
-- Iodine staining pattern (0-2)
-- Vascular patterns (punctation, mosaic)
-- Lesion margins (sharp/irregular)
-- Transformation zone visibility
-- Clinical diagnosis (NORMAL/CIN1/CIN2/CIN3)
-- Confidence score (1-5)
-
-⏱️ **Time per image:** ~0.1 seconds (GPU) / ~1 second (CPU)  
-📊 **Accuracy:** 70-75% baseline
-
-### Manual Annotation Required When:
-❌ **Need clinical review of:**
-- Images with low confidence scores (<2/5)
-- Ambiguous pathology
-- Quality control of auto-generated labels
-- High-value cases (CIN2/CIN3 diagnoses)
-
-⏱️ **Time per image:** ~2-3 minutes (experienced clinician)  
-📊 **Benefit:** Ground truth labels for model training
-
----
-
-## Part 3: Complete Annotation Pipeline
-
-### Step 1: Automatic Annotation (All 42,430 images)
-
-**Option A: Fast GPU Processing** (Recommended)
-```bash
-# Prerequisites: GPU-enabled machine (NVIDIA/Apple Metal)
-source annotation_env/bin/activate
-python3 auto_annotate_gpu.py
-```
-
-**What it produces:**
-- `auto_annotations_gpu.csv` (42,430 rows)
-- Image ID, filename, 8 clinical features, diagnosis, confidence
-
-**Expected output:**
-```
-⚡ Processing 42,430 images with GPU acceleration...
-Auto-annotating: 100%|████████| 42430/42430 [~20 min]
-✅ Complete!
-   Processed: 42,430
-   Failed: <10
-   Saved: auto_annotations_gpu.csv
-```
-
-**CSV Format:**
-```csv
-image_id,filename,dataset_source,annotator_id,annotation_date,
-acetowhitening_severity,iodine_pattern,punctation_present,
-punctation_severity,mosaic_present,mosaic_severity,lesion_margins,
-tz_visibility,final_diagnosis,confidence,notes
-AUTO_000000,/path/image.jpg,intel-mobileodt,AUTO_GPU,2026-05-07,2,1,True,2,False,0,irregular,partial,CIN1,3,Auto-generated...
+```powershell
+python -m scripts.create_user --username dr_smith --role annotator --full-name "Dr. Smith"
+# Roles: annotator | reviewer | admin
+# Password is prompted interactively if omitted
 ```
 
 ---
 
-### Step 2: Filter High-Confidence Predictions (Optional)
+## Part 2: Getting Started
 
-```python
-import pandas as pd
+### 1. Ingest Images
 
-# Load auto-generated annotations
-df = pd.read_csv('auto_annotations_gpu.csv')
-
-# Keep high-confidence predictions (confidence >= 4)
-high_conf = df[df['confidence'] >= 4]
-print(f"High confidence: {len(high_conf)} / {len(df)} ({len(high_conf)/len(df)*100:.1f}%)")
-
-# Flag for manual review: low confidence
-low_conf = df[df['confidence'] <= 2]
-print(f"Needs review: {len(low_conf)} images")
-
-# Save low-confidence for manual review
-low_conf.to_csv('manual_review_list.csv', index=False)
+```powershell
+python -m scripts.ingest_images --root C:\path\to\images --dataset my_dataset
+# --dry-run to preview without inserting
 ```
 
-**Expected distribution:**
-- High confidence (≥4): ~60% of images
-- Medium confidence (2-3): ~30% of images
-- Low confidence (<2): ~10% of images
+Supported formats: `.jpg`, `.jpeg`, `.png`, `.bmp`, `.tif`, `.tiff`  
+Images are deduplicated by SHA-256 — re-running is safe.
+
+### 2. Log In
+
+Open `http://localhost:5004` and log in with your username and password.
+
+### 3. Navigate
+
+| Page | URL | Who |
+|------|-----|-----|
+| Dashboard | `/dashboard` | All roles |
+| Annotate | `/annotate` | Annotators |
+| Review queue | `/review` | Reviewers, Admins |
+| Admin panel | `/admin` | Admins only |
 
 ---
 
-### Step 3: Manual Review & Correction (Web Interface)
+## Part 3: Annotation Workflow
 
-**For images requiring verification:**
+### Step 1 — Open an Image
 
-```bash
-# Start web annotation tool
-source annotation_env/bin/activate
-python3 annotation_tool.py
+Go to `/annotate`. The platform serves the next unannotated image. You can also navigate directly to `/annotate/{image_id}`.
 
-# Open browser: http://localhost:5000
-```
+### Step 2 — Fill in the Annotation Form
 
-**Workflow:**
-1. Login with your name (e.g., DR_SMITH)
-2. Image displays with auto-predictions
-3. Review and modify if needed
-4. Add clinical notes/observations
-5. Save and move to next image
-
-**Web Interface:**
-- Interactive sliders for severity scores
-- Radio buttons for categorical features
-- Real-time confidence display
-- Dashboard with statistics
-- Inter-rater agreement tracking
+The form is grouped into four blocks. Fields marked **\*** are required to submit (draft saves are allowed at any point).
 
 ---
 
-### Step 4: Data Quality Validation
+### Block A: Image Quality
 
-```python
-import pandas as pd
+| Field | Type | Values |
+|-------|------|--------|
+| `image_quality` | Enum | `excellent`, `good`, `fair`, `poor` |
+| `blur_present` | Boolean | |
+| `blood_present` | Boolean | |
+| `mucus_present` | Boolean | |
+| `specular_reflection_present` | Boolean | |
+| `lighting_issue` | Enum | `none`, `under`, `over`, `uneven` |
+| `usable_for_training` | Boolean | Whether this image should be included in ML exports |
 
-# Load combined annotations
-auto = pd.read_csv('auto_annotations_gpu.csv')
-manual = pd.read_csv('annotations.csv')
-
-# Check for consistency
-print("Auto-annotation summary:")
-print(auto['final_diagnosis'].value_counts())
-print(f"Average confidence: {auto['confidence'].mean():.2f}/5")
-
-print("\nManual review summary:")
-print(manual['final_diagnosis'].value_counts())
-
-# Identify disagreements (auto vs manual)
-both = pd.merge(auto, manual, on='filename', suffixes=('_auto', '_manual'))
-disagreements = both[both['final_diagnosis_auto'] != both['final_diagnosis_manual']]
-print(f"\nDisagreements: {len(disagreements)} / {len(both)} ({len(disagreements)/len(both)*100:.1f}%)")
-```
+If `usable_for_training` is unchecked, the image is excluded from all exports.
 
 ---
 
-## Part 4: Annotation Types & Their Uses
+### Block B: Anatomy
 
-### 1. Automatic Annotation (Fast, 70-75% accuracy)
-- **Use for:** Bulk labeling, initial dataset curation
-- **Time:** ~20-30 minutes for 42K images
-- **Output:** `auto_annotations_gpu.csv`
-- **Cost:** 0 (local processing)
-
-### 2. Manual Annotation (Slow, 95%+ accuracy)
-- **Use for:** Ground truth training data, quality control
-- **Time:** ~1,400 hours for 42K images (impractical)
-- **Output:** `annotations.csv` (from web interface)
-- **Cost:** High (requires clinician time)
-
-### 3. Hybrid Approach (Recommended)
-- **Step 1:** Auto-annotate all 42K images (~30 min)
-- **Step 2:** Filter to low-confidence (10% = ~4,200 images)
-- **Step 3:** Manually review only 4,200 images (~2,800 hours / 35 work days)
-- **Result:** 95%+ coverage with quality assurance
+| Field | Type | Values | Notes |
+|-------|------|--------|-------|
+| `scj_visibility` | Enum | `fully_visible`, `partial`, `not_visible` | Squamocolumnar junction |
+| `transformation_zone_type` | Enum | `TZ1`, `TZ2`, `TZ3`, `unknown` | IFCPC TZ classification |
+| `tz_visibility` | Enum | `fully_visible`, `partial`, `not_visible` | |
 
 ---
 
-## Part 5: Complete Workflow (Start to Finish)
+### Block C: Colposcopic Features
 
-### Week 1: Automatic Annotation
-```bash
-# Day 1: Setup and run auto-annotation
-source annotation_env/bin/activate
-python3 auto_annotate_gpu.py
-# ✓ Output: auto_annotations_gpu.csv (42,430 images)
-```
-
-### Week 2-3: Manual Review
-```bash
-# Identify which images need review
-python3 << 'EOF'
-import pandas as pd
-df = pd.read_csv('auto_annotations_gpu.csv')
-review = df[df['confidence'] <= 2]  # Low confidence
-review.to_csv('review_list.csv', index=False)
-print(f"Images for review: {len(review)}")
-EOF
-
-# Start web annotation tool
-python3 annotation_tool.py
-# ✓ Open http://localhost:5000
-# ✓ Manually correct low-confidence predictions
-# ✓ Output: annotations.csv (merged corrections)
-```
-
-### Week 4: Quality Assurance
-```bash
-# Validate combined dataset
-python3 << 'EOF'
-import pandas as pd
-
-auto = pd.read_csv('auto_annotations_gpu.csv')
-manual = pd.read_csv('annotations.csv')
-
-print("Dataset Summary:")
-print(f"Total images: {len(auto)}")
-print(f"Manually reviewed: {len(manual)}")
-print(f"Auto-only: {len(auto) - len(manual)}")
-
-print("\nDiagnosis distribution:")
-combined = pd.concat([auto, manual]).drop_duplicates(subset=['filename'])
-print(combined['final_diagnosis'].value_counts())
-
-print(f"\nDone! Ready for model training.")
-EOF
-```
+| Field | Type | Range / Values | Notes |
+|-------|------|----------------|-------|
+| `acetowhitening_severity` | Integer | 0 – 3 | 0 = none, 3 = intense white |
+| `iodine_pattern` | Integer | 0 – 2 | 0 = normal brown, 2 = mustard yellow (iodine-negative) |
+| `vascular_pattern` | Enum | `normal`, `fine_punctation`, `coarse_punctation`, `fine_mosaic`, `coarse_mosaic`, `atypical` | |
+| `color_tone` | Enum | `pink`, `pale`, `dense_white`, `yellow` | |
+| `surface_contour` | Enum | `smooth`, `micropapillary`, `nodular`, `ulcerated` | |
+| `atypical_vessels_present` | Boolean | | Indicates high-grade/invasive disease |
 
 ---
 
-## Part 6: File Management
+### Block D: Diagnosis
 
-### Essential Files to Keep
-```
-/Volumes/TanPrish/Downloaded DataSet/
-├── annotation_tool.py              # Web annotation interface
-├── auto_annotate_gpu.py            # GPU auto-annotation
-├── annotation_env/                 # Python dependencies
-├── templates/                      # Web interface HTML
-├── auto_annotations_gpu.csv        # Auto-generated labels
-├── annotations.csv                 # All annotations (image name + clinical data)
-├── discarded_images.csv            # Low-quality images to skip
-├── annotated_images/               # All annotated images (TPD_1.jpg, TPD_2.jpg, etc.)
-│   ├── TPD_1.jpg
-│   ├── TPD_2.jpg
-│   ├── TPD_3.jpg
-│   └── ...
-└── [dataset directories]/          # Original images (unchanged)
-    ├── intel-mobileodt-cervical-cancer-screening/
-    ├── kaggle v4/
-    └── CIN1:2:3/
-```
-
-### Output CSV Format
-```csv
-image_id,filename,dataset_source,annotator_id,annotation_date,
-acetowhitening_severity,iodine_pattern,punctation_present,
-punctation_severity,mosaic_present,mosaic_severity,lesion_margins,
-tz_visibility,final_diagnosis,confidence,notes
-```
+| Field | Type | Values | Notes |
+|-------|------|--------|-------|
+| `colposcopic_impression` **\*** | Enum | `NORMAL`, `CIN1`, `CIN2`, `CIN3`, `AIS`, `INVASIVE_CANCER` | Required to submit |
+| `histopathology_result` | Enum | Same as above | Fill in if biopsy result is known |
+| `confidence` **\*** | Integer | 1 – 5 | 1 = very uncertain, 5 = certain |
+| `notes` | Text | Max 4000 chars | Clinical observations |
 
 ---
 
-## Part 7: Clinical Feature Definitions
+### Step 3 — Draw Lesion Regions (Optional but Recommended)
 
-### Acetowhitening Severity (0-3)
-- **0 = None:** Normal pink epithelium
-- **1 = Mild:** Slight whitening after acetic acid
-- **2 = Moderate:** Clear whitening of affected area
-- **3 = Intense:** Intense white lesion (high-grade abnormality)
+For each visible lesion, draw a region on the image using the canvas tools:
 
-### Iodine Staining Pattern (0-2)
-- **0 = Normal:** Brown staining (healthy tissue)
-- **1 = Partial:** Mixed brown and yellow (suspicious)
-- **2 = Absent:** Mustard yellow (high-grade lesion) ⚠️
+**Region types:**
+- **Bounding box** — rectangle around the lesion
+- **Polygon** — free-form outline (minimum 3 points)
+- **Mask** — pixel-level segmentation (RLE or PNG base64)
 
-### Vascular Patterns
-- **Punctation:** Fine dot-like vascular pattern (high-grade indicator)
-- **Mosaic:** Grid-like vascular pattern (high-grade indicator)
-- **Severity:** 1=Mild, 2=Moderate, 3=Severe
+**Per-region fields:**
+
+| Field | Type | Values / Range |
+|-------|------|----------------|
+| `lesion_label` | Enum | `NORMAL`, `CIN1`, `CIN2`, `CIN3`, `AIS`, `INVASIVE_CANCER` |
+| `lesion_location_clock` | Integer | 1 – 12 (clock position on cervix) |
+| `lesion_quadrant` | Enum | `anterior`, `posterior`, `left_lateral`, `right_lateral`, `circumferential` |
+| `lesion_size_percent` | Integer | 0 – 100 (% of visible transformation zone) |
+| `lesion_margins` | Enum | `sharp`, `irregular` |
+| `punctation_present` | Boolean | |
+| `punctation_severity` | Integer | 1 – 3 |
+| `mosaic_present` | Boolean | |
+| `mosaic_severity` | Integer | 1 – 3 |
+| `region_notes` | Text | Max 4000 chars |
+
+Multiple regions can be drawn per image. Each region is saved separately and linked to the image annotation.
+
+---
+
+### Step 4 — Save or Submit
+
+| Action | Effect |
+|--------|--------|
+| **Autosave** | Saves all fields as a draft; you can return and edit later |
+| **Submit** | Finalizes the annotation (requires `colposcopic_impression` + `confidence`); locked for editing after submission |
+| **Discard** | Marks the image as unusable and records a reason; image is excluded from exports |
+
+---
+
+## Part 4: Annotation Status Lifecycle
+
+```
+draft → submitted → reviewed → consensus
+                 ↘ rejected → [new draft created, version incremented]
+```
+
+| Status | Meaning |
+|--------|---------|
+| `draft` | In progress; can be autosaved and edited |
+| `submitted` | Finalized by annotator; awaiting reviewer action |
+| `reviewed` | Approved by a reviewer |
+| `consensus` | Computed agreement across multiple reviewers |
+| `superseded` | Rejected or discarded; replaced by a new version |
+
+---
+
+## Part 5: Review Workflow
+
+Reviewers see all submitted annotations in the **Review Queue** (`/review`).
+
+### Actions
+
+| Action | Endpoint | Notes |
+|--------|----------|-------|
+| **Approve** | `POST /api/v1/review/{id}/approve` | Marks annotation as `reviewed`; optional comment |
+| **Reject** | `POST /api/v1/review/{id}/reject` | Marks as `superseded`; comment required; creates new draft for annotator |
+
+### Disagreement Detection
+
+`GET /api/v1/review/disagreements` — lists images where multiple annotators submitted different `colposcopic_impression` values. Useful for identifying difficult or ambiguous cases.
+
+---
+
+## Part 6: Consensus Computation
+
+When multiple annotators have reviewed the same image, run:
+
+```powershell
+python -m scripts.recompute_consensus
+```
+
+This computes an agreement score (0 – 1) across all `reviewed` annotations for each image and writes a `ConsensusLabel` record. Results appear in the dashboard's inter-rater agreement panel.
+
+---
+
+## Part 7: Dashboard & Analytics
+
+The dashboard (`/dashboard`) shows:
+
+**Admins / Reviewers:**
+- Total images, total users, active annotators
+- Site-wide diagnosis distribution
+- Submissions per day per annotator (productivity chart)
+- Inter-rater agreement (Cohen's kappa + percent agreement)
+- Disagreement count across all images
+- Recent submissions feed
+
+**Annotators:**
+- Personal submitted / reviewed / draft counts
+- Images remaining in queue
+- Own diagnosis distribution
+
+---
+
+## Part 8: Exporting Data
+
+Reviewers and admins can export from the **Export** panel or via API.
+
+All exports accept optional query parameters:
+- `?dataset=<name>` — filter to a specific ingested dataset
+- `?status=reviewed|submitted|all` — default is `reviewed`
+
+| Format | Endpoint | Output |
+|--------|----------|--------|
+| **CSV (image-level)** | `GET /api/v1/export/csv?level=image` | One row per image; all annotation fields |
+| **CSV (region-level)** | `GET /api/v1/export/csv?level=region` | One row per lesion region |
+| **COCO Detection** | `GET /api/v1/export/coco` | JSON with bounding boxes and segmentation |
+| **YOLO** | `GET /api/v1/export/yolo` | ZIP with `.txt` label files and `data.yaml` |
+| **Segmentation Masks** | `GET /api/v1/export/masks` | ZIP with semantic PNG masks (class ID = diagnosis) |
+| **Full Bundle** | `GET /api/v1/export/bundle` | ZIP with original images + overlays + label files |
+| **Export Summary** | `GET /api/v1/export/summary` | Count preview before downloading |
+
+**COCO / YOLO category mapping:**
+
+| Category ID | Label |
+|-------------|-------|
+| 0 | NORMAL |
+| 1 | CIN1 |
+| 2 | CIN2 |
+| 3 | CIN3 |
+| 4 | AIS |
+| 5 | INVASIVE_CANCER |
+
+---
+
+## Part 9: Admin Functions
+
+### User Management (`/admin`)
+
+| Action | Notes |
+|--------|-------|
+| Create user | Set username, role, full name, password |
+| Change role | Promote annotator → reviewer → admin |
+| Disable account | Immediately blocks login |
+| Reset password | Admin sets new password |
+
+Admins cannot disable their own account or remove their own admin role.
+
+### Uploading Images
+
+Admins can upload individual image files via the admin panel or:
+
+```
+POST /api/v1/admin/images/upload   (multipart/form-data)
+```
+
+For bulk ingestion, use the CLI script instead (Part 2).
+
+---
+
+## Part 10: Clinical Feature Reference
+
+### Acetowhitening Severity (0 – 3)
+- **0 — None:** Normal pink epithelium; no acetowhite reaction
+- **1 — Mild:** Faint whitening after acetic acid application
+- **2 — Moderate:** Clear, defined white area
+- **3 — Intense:** Dense, oyster-white lesion — strong indicator of high-grade pathology
+
+### Iodine Pattern (0 – 2)
+- **0 — Normal:** Brown staining; healthy, glycogen-rich squamous epithelium
+- **1 — Partial:** Mixed brown and yellow (partial iodine uptake) — suspicious
+- **2 — Absent:** Mustard or saffron yellow; no glycogen — iodine-negative lesion, high-grade indicator
+
+### Vascular Pattern
+- **normal:** No abnormal vascularity
+- **fine_punctation:** Small, evenly spaced dot vessels; lower-grade
+- **coarse_punctation:** Large, irregular dot vessels; higher-grade
+- **fine_mosaic:** Regular tile-like vascular grid; lower-grade
+- **coarse_mosaic:** Irregular, widely spaced mosaic; higher-grade
+- **atypical:** Bizarre vessels — corkscrew, hairpin shapes; suggests invasive disease
+
+### Transformation Zone Type (IFCPC)
+- **TZ1:** Entirely ectocervical; fully visible
+- **TZ2:** Partially endocervical; SCJ visible with aids
+- **TZ3:** Entirely endocervical; SCJ not visible
 
 ### Lesion Margins
-- **Sharp:** Well-demarcated boundary (lower-grade)
-- **Irregular:** Ill-defined boundary (higher-grade)
+- **sharp:** Well-demarcated, punched-out borders — more characteristic of high-grade
+- **irregular:** Geographic, feathered, or satellite lesions — may indicate lower-grade or multifocal disease
 
-### Transformation Zone (TZ)
-- **Fully visible:** Complete visualization (easier diagnosis)
-- **Partial:** Some TZ visible (moderate difficulty)
-- **Not visible:** Cannot visualize (hard to assess)
+### Colposcopic Impression / Diagnosis
+- **NORMAL:** No colposcopic abnormality detected
+- **CIN1:** Low-grade squamous intraepithelial lesion; usually regresses
+- **CIN2:** High-grade CIN; recommended for treatment
+- **CIN3:** Severe high-grade CIN / CIS; requires excision
+- **AIS:** Adenocarcinoma in situ; endocervical glandular lesion
+- **INVASIVE_CANCER:** Frankly invasive cervical carcinoma
 
-### Final Diagnosis
-- **NORMAL:** No abnormality detected
-- **CIN1:** Low-grade cervical intraepithelial neoplasia (follow-up)
-- **CIN2:** High-grade CIN (requires colposcopic excision)
-- **CIN3:** Severe high-grade CIN (requires excision)
-
----
-
-## Part 8: Quick Start Commands
-
-### Run Auto-Annotation
-```bash
-cd /Volumes/TanPrish/Downloaded\ DataSet
-source annotation_env/bin/activate
-python3 auto_annotate_gpu.py
-```
-
-### Start Web Annotation
-```bash
-cd /Volumes/TanPrish/Downloaded\ DataSet
-source annotation_env/bin/activate
-python3 annotation_tool.py
-# Then open: http://localhost:5000
-```
-
-### Check Results
-```bash
-# View auto-annotation results
-head -5 auto_annotations_gpu.csv
-
-# View manual annotations
-head -5 annotations.csv
-
-# Count by diagnosis
-python3 -c "import pandas as pd; print(pd.read_csv('auto_annotations_gpu.csv')['final_diagnosis'].value_counts())"
-```
-
----
-
-## Part 9: Expected Results
-
-### After Auto-Annotation (42,430 images)
-```
-Final Diagnosis Distribution:
-NORMAL: 25,458 (60%)
-CIN1:    8,514 (20%)
-CIN2:    5,943 (14%)
-CIN3:    2,515 (6%)
-
-Average Confidence: 3.2/5
-Low Confidence (<2): 4,243 images (10%)
-```
-
-### After Manual Review
-```
-High-Confidence Predictions Kept: 38,187 (90%)
-Corrections Made: 4,243 (10%)
-
-Final Dataset Ready for:
-✓ Model training
-✓ Cross-validation
-✓ Clinical validation study
-```
-
----
-
-## Part 10: Annotated Images Folder
-
-### Automatic Image Organization
-
-When you annotate an image using the web interface and click **"Save & Next"**, the system automatically:
-
-1. **Saves a copy** of the annotated image to the `annotated_images/` folder
-2. **Preserves the original** - Original images in dataset folders remain unchanged
-3. **Records reference** - CSV includes the path to the copied image
-
-### Folder Structure
-```
-annotated_images/
-├── TPD_1.jpg   (First annotated image)
-├── TPD_2.jpg   (Second annotated image - cropped)
-├── TPD_3.jpg   (Third annotated image)
-├── TPD_4.jpg   (Fourth annotated image)
-└── TPD_5.jpg   (Fifth annotated image - cropped)
-```
-
-### Simple Sequential Naming
-```
-TPD_1.jpg, TPD_2.jpg, TPD_3.jpg, ...
-
-Each file is numbered sequentially as annotated.
-All original image info is stored in annotations.csv for reference.
-```
-
-### Original vs Cropped Images
-- **TPD_X.jpg**: Either the full original image OR the cropped region
-- **CSV tracking**: See `cropped_image_path` column to know which is which
-- All metadata (original filename, annotator, timestamp, etc.) is in the CSV
-
-### Benefits
-✅ **Quick access** - All annotated images in one folder
-✅ **Trace annotations** - See who annotated which image and when
-✅ **Safety backup** - Separate copy protects original dataset
-✅ **Easy export** - All reviewed images ready to share/archive
-✅ **Selective saving** - Cropped images save only the relevant region
-
-### Annotation Workflow
-
-**Step-by-step:**
-1. View image (optional: click "Enable Crop" to zoom into regions)
-2. Annotate clinical features using the form
-3. Click "Save & Next"
-   - Image saved to `annotated_images/TPD_X.jpg` (sequential numbering)
-   - Annotation recorded in `annotations.csv`
-   - Original dataset remains unchanged
-
-**What you get:**
-- **annotated_images/** → Clean copies of all reviewed images (TPD_1, TPD_2, etc.)
-- **annotations.csv** → Simple table with image names and clinical findings
-
-### CSV Format - Simple & Clean
-The `annotations.csv` stores only image name and annotations:
-
-```csv
-image_name,acetowhitening_severity,iodine_pattern,punctation_present,punctation_severity,mosaic_present,mosaic_severity,lesion_margins,tz_visibility,final_diagnosis,confidence,annotator_id,notes
-TPD_1,2,1,True,2,False,0,irregular,partial,CIN1,3,DR_SMITH,Prominent lesion
-TPD_2,1,0,False,0,True,2,sharp,fully_visible,NORMAL,4,DR_SMITH,Clear cervix
-TPD_3,3,2,True,3,True,3,irregular,not_visible,CIN3,5,DR_JONES,Severe abnormality
-TPD_4,0,0,False,0,False,0,sharp,fully_visible,NORMAL,5,DR_SMITH,Normal tissue
-```
-
-**Columns:**
-- `image_name`: TPD_1, TPD_2, etc. (simple sequential)
-- `acetowhitening_severity` through `notes`: Clinical annotations only
-- `annotator_id`: Who annotated it
+### Confidence Score (1 – 5)
+- **1:** Very uncertain; ambiguous image or features
+- **2:** Low confidence; some features present but unclear
+- **3:** Moderate confidence; features consistent but image quality limited
+- **4:** High confidence; clear colposcopic features
+- **5:** Certain; unambiguous findings or corroborated by histopathology
 
 ---
 
 ## Part 11: Troubleshooting
 
-### Issue: Auto-annotation is slow
-**Solution:** Use GPU version instead of CPU
-```bash
-python3 auto_annotate_gpu.py  # Much faster
-```
+### Login fails
+- Confirm username is correct (case-sensitive)
+- Admin can reset password via `/admin`
+- Check account is not disabled (`is_active = false`)
 
-### Issue: Web annotation not loading images
-**Solution:** Refresh browser at http://localhost:5000
-```bash
-# Restart if needed
-python3 annotation_tool.py
-```
+### Annotation form won't submit
+- Ensure `colposcopic_impression` and `confidence` are filled in
+- Check browser console for validation errors
 
-### Issue: Out of memory during auto-annotation
-**Solution:** Process in batches or reduce batch size
-```bash
-# The script handles batching automatically
-# If still fails, run on a machine with more RAM
-```
+### Image not appearing in queue
+- Image may already have a submitted annotation from this user
+- Check `GET /api/v1/images/stats/queue` for remaining count
 
-### Issue: CSV file has encoding issues
-**Solution:** Ensure UTF-8 encoding
-```bash
-file auto_annotations_gpu.csv
-# Should show: UTF-8 Unicode text
-```
+### Consensus score is missing
+- Run `python -m scripts.recompute_consensus` after reviewers have approved multiple annotations on the same image
 
-### Issue: annotated_images folder is growing too large
-**Solution:** Archive old annotated images or use symbolic links
-```bash
-# Archive images from a specific date
-tar -czf annotated_images_backup_20260501.tar.gz annotated_images/IMG_*_20260501_*.jpg
+### Export is empty
+- Check `?status=` parameter — default requires `reviewed` annotations
+- Verify images have `usable_for_training = true`
+- Run `GET /api/v1/export/summary` to preview counts before downloading
 
-# Or delete if no longer needed
-rm annotated_images/IMG_*_OLDDATE_*.jpg
-```
+### Database errors on startup
+- Run `flask --app wsgi db upgrade` to apply any pending Alembic migrations
 
 ---
 
-## Summary
+## Part 12: API Quick Reference
 
-| Stage | Time | Method | Images | Output |
-|-------|------|--------|--------|--------|
-| **Phase 1** | 30 min | Auto (GPU) | 42,430 | auto_annotations_gpu.csv |
-| **Phase 2** | 70 hours | Manual (Web) | ~4,243 | annotations.csv |
-| **Phase 3** | 30 min | QA (Python) | 42,430 | Final merged dataset |
-| **Total** | ~3 weeks | Hybrid | 42,430 | Production-ready dataset |
+All endpoints are under `/api/v1/`. Authentication is session-based (cookie).
 
-**Result:** 42,430 clinically annotated cervical cancer images ready for Vision Transformer model training! 🎉
-
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/auth/login` | Log in |
+| `POST` | `/auth/logout` | Log out |
+| `GET` | `/auth/me` | Current user info |
+| `GET` | `/images` | List images (paginated) |
+| `GET` | `/images/{id}/file` | Download image file |
+| `GET` | `/images/stats/queue` | Queue stats for current user |
+| `POST` | `/annotations` | Create or get existing draft |
+| `GET` | `/annotations/mine?image_id={id}` | Current user's live annotation |
+| `PATCH` | `/annotations/{id}` | Autosave draft fields |
+| `POST` | `/annotations/{id}/submit` | Finalize annotation |
+| `POST` | `/annotations/{id}/discard` | Discard with reason |
+| `POST` | `/annotations/{id}/regions` | Add a lesion region |
+| `PATCH` | `/regions/{id}` | Update region |
+| `DELETE` | `/regions/{id}` | Delete region |
+| `GET` | `/review/queue` | Submitted annotations awaiting review |
+| `GET` | `/review/disagreements` | Images with conflicting diagnoses |
+| `POST` | `/review/{id}/approve` | Approve annotation |
+| `POST` | `/review/{id}/reject` | Reject annotation |
+| `GET` | `/dashboard/stats` | Summary statistics |
+| `GET` | `/dashboard/agreement` | Inter-rater agreement (kappa) |
+| `GET` | `/export/csv` | CSV export |
+| `GET` | `/export/coco` | COCO JSON export |
+| `GET` | `/export/yolo` | YOLO zip export |
+| `GET` | `/export/masks` | Semantic mask zip |
+| `GET` | `/export/bundle` | Full bundle zip |
+| `GET` | `/admin/users` | List all users |
+| `POST` | `/admin/users` | Create user |
+| `PATCH` | `/admin/users/{id}` | Update user |
