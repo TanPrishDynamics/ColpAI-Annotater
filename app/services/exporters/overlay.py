@@ -11,6 +11,7 @@ import numpy as np
 from PIL import Image as PILImage, ImageDraw, ImageFont
 
 from app.models.enums import RegionType
+from app.services import storage
 from app.services.exporters import geometry as geo
 
 # Same palette as the dashboard + mask export, as RGB.
@@ -37,8 +38,9 @@ def render_overlay(image_row, annotation) -> PILImage.Image | None:
     Returns an RGBA PIL image, or None if the source file can't be opened.
     """
     try:
-        base = PILImage.open(image_row.source_path).convert('RGBA')
-    except (FileNotFoundError, OSError):
+        with storage.open_image(image_row.source_path) as fh:
+            base = PILImage.open(fh).convert('RGBA')
+    except (FileNotFoundError, OSError, storage.StorageError):
         return None
 
     w, h = base.size

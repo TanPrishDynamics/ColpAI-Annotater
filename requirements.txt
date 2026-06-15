@@ -11,6 +11,14 @@ Werkzeug>=3.0
 # --- Database / migrations ---
 SQLAlchemy>=2.0,<2.1
 alembic>=1.13
+# Postgres driver for Supabase (URI scheme: postgresql+psycopg://...).
+# Only needed when COLPAI_DATABASE_URI points at Postgres; harmless otherwise.
+psycopg[binary]>=3.1
+
+# --- Supabase Storage (object storage backend; only used when COLPAI_STORAGE_BACKEND=supabase) ---
+# We call the Storage REST API directly over httpx (HTTP/1.1) rather than the
+# supabase-py client, whose HTTP/2 transport stalled on some networks.
+httpx>=0.27
 
 # --- Validation ---
 pydantic>=2.6,<3.0
@@ -23,6 +31,9 @@ numpy>=1.26
 
 # --- CLI ---
 click>=8.1
+
+# --- Config: load .env in dev (and any non-systemd run) ---
+python-dotenv>=1.0
 
 # --- Dev / tests ---
 pytest>=8.0

@@ -24,6 +24,11 @@ class Image(db.Model):
     source_path = db.Column(db.String(1024), nullable=False)
     dataset_source = db.Column(db.String(128), nullable=False, index=True)
 
+    # Patient/folder grouping. When an admin uploads a whole folder, every image
+    # in it shares an auto-assigned code (PAT-001, PAT-002, ...) and is stored
+    # under that prefix in the bucket. Null for individually-uploaded images.
+    patient_code = db.Column(db.String(32), nullable=True, index=True)
+
     image_phase = db.Column(SAEnum(ImagePhase, name='image_phase'), nullable=True, index=True)
     capture_device = db.Column(db.String(128), nullable=True)
     magnification_level = db.Column(
@@ -58,6 +63,7 @@ class Image(db.Model):
             'sha256': self.sha256,
             'source_path': self.source_path,
             'dataset_source': self.dataset_source,
+            'patient_code': self.patient_code,
             'image_phase': self.image_phase.value if self.image_phase else None,
             'capture_device': self.capture_device,
             'magnification_level': self.magnification_level.value if self.magnification_level else None,

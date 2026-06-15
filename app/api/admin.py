@@ -14,15 +14,20 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 from flask_login import current_user, login_required
 from sqlalchemy import func, select
+from werkzeug.utils import secure_filename
 
 from app.api.errors import error_response
 from app.extensions import db
-from app.models import ImageAnnotation, User
+from app.models import ConsensusLabel, DiscardedImage, Image, ImageAnnotation, User
 from app.models.enums import AnnotationStatus, UserRole
 from app.schemas.admin import UserCreate, UserUpdate
+from app.services import storage
 from app.services.ingestion import ingest_upload
 
 bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
+
+# Bucket folder every upload is grouped under, e.g. "upload/PAT-001/<file>".
+UPLOAD_PREFIX = 'upload'
 
 
 def _require_admin():
@@ -140,13 +145,51 @@ def update_user(user_id: str):
     return jsonify(_user_dict(user, _progress_by_user()))
 
 
+def _next_patient_number() -> int:
+    """Smallest unused N for a PAT-<NNN> code, based on what's already in the DB."""
+    codes = db.session.execute(
+        select(Image.patient_code).where(Image.patient_code.isnot(None)).distinct()
+    ).scalars().all()
+    highest = 0
+    for code in codes:
+        if code and code.upper().startswith('PAT-'):
+            try:
+                highest = max(highest, int(code.split('-', 1)[1]))
+            except (IndexError, ValueError):
+                continue
+    return highest + 1
+
+
+def _split_folder_path(relpath: str):
+    """Return (group, subpath) for an uploaded file's relative path.
+
+    A folder upload sends paths like ``selected/PAT_A/img.jpg`` (browser prepends
+    the chosen folder). The first sub-directory under the selection identifies the
+    patient group; the remainder is the path within that folder. Returns
+    ``(None, basename)`` for a plain (non-folder) file.
+    """
+    parts = [p for p in relpath.replace('\\', '/').split('/') if p not in ('', '.', '..')]
+    if len(parts) <= 1:
+        return None, (parts[-1] if parts else relpath)
+    if len(parts) == 2:
+        return parts[0], parts[1]          # selected one patient folder
+    return parts[1], '/'.join(parts[2:])    # selected a parent of patient folders
+
+
 @bp.post('/images/upload')
 @login_required
 def upload_images():
-    """Upload one or more images into a dataset, ready for annotation.
+    """Upload images (or whole folders) into a dataset, ready for annotation.
 
     Multipart form: ``files`` (one or more) + ``dataset`` (the dataset_source
-    label). Each file is sha256-deduped, validated, and stored under UPLOAD_DIR.
+    label). Each file is sha256-deduped, validated, and stored via the configured
+    storage backend.
+
+    Folder uploads: when files carry a relative path (the browser's
+    ``webkitRelativePath``, sent as the file's name), each top-level folder is
+    treated as one patient and auto-renamed ``PAT-001``, ``PAT-002``, ... . Each
+    image is stored flat under ``upload/PAT-NNN/<filename>`` in the bucket (any
+    nested sub-dirs such as ``images/`` are dropped).
     """
     guard = _require_admin()
     if guard is not None:
@@ -160,18 +203,153 @@ def upload_images():
     if not files:
         return error_response('no_files', 'No files were uploaded.', status=422)
 
+    # Parse each file's path and assign a PAT code per distinct folder group.
+    parsed = [(_split_folder_path(f.filename), f) for f in files]
+    groups = sorted({grp for (grp, _), _ in parsed if grp})
+    start = _next_patient_number()
+    code_for_group = {grp: f"PAT-{start + i:03d}" for i, grp in enumerate(groups)}
+
     upload_dir = Path(current_app.config['UPLOAD_DIR'])
     counts = {'ingested': 0, 'duplicate': 0, 'error': 0}
     results = []
-    for fs in files:
-        r = ingest_upload(fs, dataset, upload_dir)
+    for (grp, sub), fs in parsed:
+        patient_code = code_for_group.get(grp)
+        # Store flat under the patient folder: upload/PAT-NNN/<filename>
+        # (drop any nested sub-dirs like the on-disk "images/").
+        if patient_code:
+            filename = secure_filename(Path(sub).name) or 'file'
+            object_key = f"{UPLOAD_PREFIX}/{patient_code}/{filename}"
+        else:
+            object_key = None
+        r = ingest_upload(
+            fs, dataset, upload_dir,
+            patient_code=patient_code, object_key=object_key,
+        )
         counts[r.status] = counts.get(r.status, 0) + 1
         results.append({
             'filename': r.filename,
+            'patient_code': patient_code,
             'status': r.status,
             'image_id': r.image_id,
             'message': r.message,
         })
 
     db.session.commit()
-    return jsonify({'dataset': dataset, 'counts': counts, 'results': results}), 201
+
+    current_app.logger.info("image upload: dataset=%r counts=%s", dataset, counts)
+    for r in results:
+        if r['status'] != 'ingested':
+            current_app.logger.info(
+                "  %s [%s] %s", r['filename'], r['status'], r['message'] or ''
+            )
+
+    return jsonify({
+        'dataset': dataset,
+        'counts': counts,
+        'patient_codes': sorted(code_for_group.values()),
+        'results': results,
+    }), 201
+
+
+def _delete_images(images: list[Image]) -> dict:
+    """Delete Image rows and their bucket blobs, keeping storage and DB in sync.
+
+    Annotations cascade via the Image relationship; consensus/discard rows have no
+    cascade, so they're removed explicitly first to avoid FK violations. Storage
+    deletes are best-effort (a missing blob is fine). Caller commits.
+    """
+    blobs_deleted = blobs_missing = 0
+    for img in images:
+        try:
+            if storage.delete_image(img.source_path):
+                blobs_deleted += 1
+            else:
+                blobs_missing += 1
+        except storage.StorageError as e:
+            current_app.logger.warning("delete blob failed for %s: %s", img.source_path, e)
+            blobs_missing += 1
+
+        ConsensusLabel.query.filter_by(image_id=img.id).delete(synchronize_session=False)
+        DiscardedImage.query.filter_by(image_id=img.id).delete(synchronize_session=False)
+        db.session.delete(img)  # annotations + regions cascade
+
+    return {'rows_deleted': len(images), 'blobs_deleted': blobs_deleted,
+            'blobs_missing': blobs_missing}
+
+
+@bp.delete('/images/patients/<patient_code>')
+@login_required
+def delete_patient(patient_code: str):
+    """Delete every image (DB row + bucket object) for one PAT-NNN patient.
+
+    Removes the blobs from storage and the rows from the DB together, so a deleted
+    patient stops counting toward PAT numbering. Cascades to annotations/reviews.
+    """
+    guard = _require_admin()
+    if guard is not None:
+        return guard
+
+    images = Image.query.filter_by(patient_code=patient_code).all()
+    if not images:
+        return error_response('not_found', f'No images for {patient_code}.', status=404)
+
+    summary = _delete_images(images)
+    db.session.commit()
+    current_app.logger.info("deleted patient %s: %s", patient_code, summary)
+    return jsonify({'patient_code': patient_code, **summary})
+
+
+@bp.delete('/images/<image_id>')
+@login_required
+def delete_image(image_id: str):
+    """Delete a single image (DB row + bucket object)."""
+    guard = _require_admin()
+    if guard is not None:
+        return guard
+
+    img = db.session.get(Image, image_id)
+    if img is None:
+        return error_response('not_found', 'Image not found.', status=404)
+
+    summary = _delete_images([img])
+    db.session.commit()
+    return jsonify({'image_id': image_id, **summary})
+
+
+@bp.get('/annotated')
+@login_required
+def list_annotated():
+    """List every submitted annotation that has a stored final annotated image.
+
+    Powers the admin gallery; each item's image is served from the existing
+    ``/api/v1/annotations/<id>/crop`` endpoint (admins may read any annotation).
+    """
+    guard = _require_admin()
+    if guard is not None:
+        return guard
+
+    rows = (
+        db.session.query(ImageAnnotation, Image, User)
+        .join(Image, ImageAnnotation.image_id == Image.id)
+        .join(User, ImageAnnotation.annotator_id == User.id)
+        .filter(
+            ImageAnnotation.status == AnnotationStatus.submitted,
+            ImageAnnotation.crop_path.isnot(None),
+        )
+        .order_by(ImageAnnotation.submitted_at.desc())
+        .all()
+    )
+
+    items = [{
+        'annotation_id': ann.id,
+        'image_id': img.id,
+        'patient_code': img.patient_code,
+        'dataset_source': img.dataset_source,
+        'impression': ann.colposcopic_impression.value if ann.colposcopic_impression else None,
+        'region_count': len(ann.regions),
+        'annotator': user.full_name or user.username,
+        'submitted_at': ann.submitted_at.isoformat() if ann.submitted_at else None,
+        'image_url': f'/api/v1/annotations/{ann.id}/crop',
+    } for ann, img, user in rows]
+
+    return jsonify({'items': items, 'count': len(items)})

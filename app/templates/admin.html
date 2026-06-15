@@ -16,6 +16,12 @@
     .dl-grid { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
     .dl-grid label { margin-bottom: 4px; }
     .dl-grid select { width: auto; }
+    .ann-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+    .ann-card { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-elev, #1a1f29); }
+    .ann-card a { display: block; }
+    .ann-card img { width: 100%; height: 150px; object-fit: contain; background: #0d1016; display: block; }
+    .ann-meta { padding: 6px 8px; font-size: 12px; }
+    .ann-meta .muted { font-size: 11px; }
 </style>
 <header>
     <h1>ColpAI &middot; Admin</h1>
@@ -57,6 +63,16 @@
                 <input id="upFiles" type="file" accept="image/*" multiple>
             </div>
             <div><button id="upBtn" onclick="uploadImages()">Upload</button></div>
+            <div style="grid-column: 1 / -1; border-top:1px solid var(--border,#2a2f3a); margin-top:4px; padding-top:10px;">
+                <label>…or upload whole folder(s) — each folder becomes a patient (auto-named PAT-001, PAT-002, …)</label>
+                <input id="upFolder" type="file" accept="image/*" multiple webkitdirectory directory>
+            </div>
+            <div><button id="upFolderBtn" onclick="uploadFolder()">Upload folder</button></div>
+            <div style="grid-column: 1 / -1; border-top:1px solid var(--border,#2a2f3a); margin-top:4px; padding-top:10px;">
+                <label>Delete a patient — removes its images from the bucket and the database</label>
+                <input id="delPatient" placeholder="e.g. PAT-007">
+            </div>
+            <div><button id="delPatientBtn" class="danger" onclick="deletePatient()">Delete patient</button></div>
         </div>
         <div id="upProgress" class="muted" style="margin-top:10px;"></div>
         <div id="upResult" style="margin-top:10px;"></div>
@@ -100,6 +116,12 @@
             <button class="secondary" onclick="dl('yolo')">YOLO (zip)</button>
             <button class="secondary" onclick="dl('masks')">Masks (zip)</button>
         </div>
+    </div>
+
+    <div class="card">
+        <h2>Annotated images</h2>
+        <p class="muted" style="margin-top:0;">Every completed annotation's final image (crop region with the drawn regions on it), stored under <code>annotated/PAT-NNN/</code>. <span id="annCount"></span></p>
+        <div id="annGallery" class="ann-gallery"><span class="muted">Loading...</span></div>
     </div>
 </main>
 
@@ -185,22 +207,39 @@ async function resetPw(id, username) {
 }
 
 // ----- image upload -----
-async function uploadImages() {
-    const dataset = document.getElementById('upDataset').value.trim();
+function uploadImages() {
     const input = document.getElementById('upFiles');
+    // Plain files: send by their bare name.
+    return doUpload(input, document.getElementById('upBtn'), false,
+                    'Choose one or more image files.');
+}
+
+function uploadFolder() {
+    const input = document.getElementById('upFolder');
+    // Folder: send each file's relative path so the server can group by folder.
+    return doUpload(input, document.getElementById('upFolderBtn'), true,
+                    'Choose a folder to upload.');
+}
+
+async function doUpload(input, btn, asFolder, emptyMsg) {
+    const dataset = document.getElementById('upDataset').value.trim();
     const files = input.files;
     const progress = document.getElementById('upProgress');
     const result = document.getElementById('upResult');
     result.innerHTML = '';
 
     if (!dataset) { flash('Enter a dataset name first.', 'error'); return; }
-    if (!files.length) { flash('Choose one or more image files.', 'error'); return; }
+    if (!files.length) { flash(emptyMsg, 'error'); return; }
 
     const fd = new FormData();
     fd.append('dataset', dataset);
-    for (const f of files) fd.append('files', f);
+    for (const f of files) {
+        // For folder uploads, the relative path travels as the file's name so the
+        // backend can rename each top-level folder to PAT-001, PAT-002, ...
+        if (asFolder && f.webkitRelativePath) fd.append('files', f, f.webkitRelativePath);
+        else fd.append('files', f);
+    }
 
-    const btn = document.getElementById('upBtn');
     btn.disabled = true;
     progress.textContent = `Uploading ${files.length} file(s)...`;
     try {
@@ -211,8 +250,12 @@ async function uploadImages() {
         const d = await res.json();
         if (!res.ok) throw new Error(d?.error?.message || `HTTP ${res.status}`);
         const c = d.counts;
-        result.innerHTML = `<div class="alert success">Added ${c.ingested} new image(s) to "${d.dataset}". `
+        let html = `<div class="alert success">Added ${c.ingested} new image(s) to "${d.dataset}". `
             + `${c.duplicate} duplicate(s) skipped, ${c.error} error(s).</div>`;
+        if (d.patient_codes && d.patient_codes.length) {
+            html += `<div class="muted">Patient folders: ${d.patient_codes.join(', ')}</div>`;
+        }
+        result.innerHTML = html;
         const errs = d.results.filter(r => r.status === 'error');
         if (errs.length) {
             result.innerHTML += '<div class="muted">' +
@@ -226,6 +269,35 @@ async function uploadImages() {
     } finally {
         btn.disabled = false;
         progress.textContent = '';
+    }
+}
+
+// ----- delete a patient -----
+async function deletePatient() {
+    const input = document.getElementById('delPatient');
+    const btn = document.getElementById('delPatientBtn');
+    const code = input.value.trim();
+    if (!code) { flash('Enter a patient code (e.g. PAT-007).', 'error'); return; }
+    if (!confirm(`Delete ALL images for ${code} from the bucket and database? `
+        + `This also removes any annotations for them and cannot be undone.`)) return;
+
+    btn.disabled = true;
+    try {
+        const res = await fetch(`/api/v1/admin/images/patients/${encodeURIComponent(code)}`, {
+            method: 'DELETE', credentials: 'same-origin',
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d?.error?.message || `HTTP ${res.status}`);
+        document.getElementById('upResult').innerHTML =
+            `<div class="alert success">Deleted ${code}: ${d.rows_deleted} row(s), `
+            + `${d.blobs_deleted} blob(s) removed (${d.blobs_missing} already gone).</div>`;
+        input.value = '';
+        flash(`Deleted ${code}.`);
+        refreshDatasetDropdowns();
+    } catch (e) {
+        flash(e.message, 'error');
+    } finally {
+        btn.disabled = false;
     }
 }
 
@@ -276,7 +348,35 @@ async function logout() {
     window.location.href = '/login';
 }
 
+// ----- annotated images gallery -----
+function esc(s) {
+    return String(s ?? '').replace(/[&<>"]/g, c =>
+        ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+}
+async function loadAnnotated() {
+    const grid = document.getElementById('annGallery');
+    try {
+        const d = await api('/api/v1/admin/annotated');
+        document.getElementById('annCount').textContent = `${d.count} image(s).`;
+        if (!d.count) { grid.innerHTML = '<span class="muted">No completed annotations yet.</span>'; return; }
+        grid.innerHTML = d.items.map(a => `
+            <div class="ann-card">
+                <a href="${a.image_url}" target="_blank" title="Open full size">
+                    <img src="${a.image_url}" loading="lazy" alt="${esc(a.patient_code || a.image_id)}">
+                </a>
+                <div class="ann-meta">
+                    <strong>${esc(a.patient_code || '(no patient)')}</strong>
+                    <div class="muted">${esc(a.impression || 'no impression')} &middot; ${a.region_count} region(s)</div>
+                    <div class="muted">${esc(a.annotator)}</div>
+                </div>
+            </div>`).join('');
+    } catch (e) {
+        grid.innerHTML = `<span class="muted">Could not load: ${esc(e.message)}</span>`;
+    }
+}
+
 loadUsers().catch(e => flash(e.message, 'error'));
 initDownloads();
+loadAnnotated();
 </script>
 {% endblock %}

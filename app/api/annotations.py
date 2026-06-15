@@ -10,9 +10,10 @@ Draft semantics:
 from __future__ import annotations
 
 import base64
+import io
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 from flask_login import current_user, login_required
 from sqlalchemy import and_, select
 
@@ -27,6 +28,8 @@ from app.schemas.annotation import (
     AnnotationSubmit,
     DiscardRequest,
 )
+from app.services import storage
+from app.services.crop import render_and_store_annotated, render_crop_bytes
 
 bp = Blueprint('annotations', __name__, url_prefix='/api/v1/annotations')
 
@@ -72,6 +75,16 @@ def _apply_blocks(ann: ImageAnnotation, payload) -> None:
             value = getattr(d, field)
             if value is not None:
                 setattr(ann, field, value)
+    if payload.crop_box is not None:
+        c = payload.crop_box
+        if c.w <= 0 or c.h <= 0:
+            # Zero-area box clears the crop (and any previously rendered image).
+            ann.crop_box = None
+            ann.crop_path = None
+        else:
+            ann.crop_box = {'x': c.x, 'y': c.y, 'w': c.w, 'h': c.h}
+            # Crop changed; drop any stale rendered image (re-rendered on submit).
+            ann.crop_path = None
 
 
 def _load_owned(annotation_id: str) -> ImageAnnotation | None:
@@ -199,6 +212,36 @@ def get_annotation(annotation_id: str):
     return jsonify(ann.to_dict(include_regions=True))
 
 
+@bp.get('/<annotation_id>/crop')
+@login_required
+def serve_crop(annotation_id: str):
+    """Serve the annotation's crop as a PNG.
+
+    Uses the stored crop image when one exists (submitted annotations); for a
+    draft with a crop box but no rendered image yet, it renders on the fly so the
+    annotator can preview/download it before submitting.
+    """
+    ann = db.session.get(ImageAnnotation, annotation_id)
+    if ann is None:
+        return error_response('not_found', 'Annotation not found.', status=404)
+    if ann.annotator_id != current_user.id and current_user.role.value not in {'reviewer', 'admin'}:
+        return error_response('forbidden', 'You cannot read another annotator\'s work.', status=403)
+
+    download_name = f"crop_{ann.id}.png"
+    if ann.crop_path:
+        try:
+            handle = storage.open_image(ann.crop_path)
+        except (FileNotFoundError, storage.StorageError, OSError):
+            handle = None
+        if handle is not None:
+            return send_file(handle, mimetype='image/png', download_name=download_name)
+
+    data = render_crop_bytes(ann)
+    if data is None:
+        return error_response('no_crop', 'This annotation has no crop region.', status=404)
+    return send_file(io.BytesIO(data), mimetype='image/png', download_name=download_name)
+
+
 @bp.patch('/<annotation_id>')
 @login_required
 def autosave(annotation_id: str):
@@ -251,6 +294,13 @@ def submit(annotation_id: str):
 
     ann.status = AnnotationStatus.submitted
     ann.submitted_at = _utcnow()
+
+    # Render and store the final annotated image (crop region with the drawn
+    # regions on it) now that the work is complete, under annotated/<patient>/.
+    # Non-fatal: a missing/unreadable source just leaves crop_path unset.
+    if ann.crop_box or ann.regions:
+        ann.crop_path = render_and_store_annotated(ann)
+
     db.session.commit()
     return jsonify(ann.to_dict(include_regions=True))
 

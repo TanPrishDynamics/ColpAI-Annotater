@@ -16,6 +16,7 @@ class ImageOut(BaseModel):
     sha256: str
     source_path: str
     dataset_source: str
+    patient_code: str | None = None
     image_phase: str | None = None
     capture_device: str | None = None
     magnification_level: str | None = None

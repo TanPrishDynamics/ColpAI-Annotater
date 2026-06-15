@@ -53,6 +53,17 @@ class DiagnosisBlock(BaseModel):
     notes: str | None = Field(default=None, max_length=4000)
 
 
+class CropBox(BaseModel):
+    """The annotator's crop rectangle, in image pixel coordinates.
+
+    A zero-area box (w or h == 0) is treated as a request to clear the crop.
+    """
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+    w: int = Field(ge=0)
+    h: int = Field(ge=0)
+
+
 class AnnotationCreate(BaseModel):
     """Body for POST /annotations. The server fills annotator/version/status."""
     image_id: str = Field(min_length=1, max_length=64)
@@ -64,6 +75,7 @@ class AnnotationPatch(BaseModel):
     anatomy: AnatomyBlock | None = None
     features: FeaturesBlock | None = None
     diagnosis: DiagnosisBlock | None = None
+    crop_box: CropBox | None = None
 
 
 class AnnotationSubmit(BaseModel):
@@ -72,6 +84,7 @@ class AnnotationSubmit(BaseModel):
     anatomy: AnatomyBlock | None = None
     features: FeaturesBlock | None = None
     diagnosis: DiagnosisBlock | None = None
+    crop_box: CropBox | None = None
 
     @model_validator(mode='after')
     def _diagnosis_required(self):

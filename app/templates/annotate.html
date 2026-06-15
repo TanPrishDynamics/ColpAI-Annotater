@@ -242,6 +242,7 @@
             <button data-tool="bbox" aria-pressed="false" title="B - Bbox">Bbox</button>
             <button data-tool="polygon" aria-pressed="false" title="P - Polygon">Polygon</button>
             <button data-tool="mask" aria-pressed="false" title="M - Mask brush">Mask</button>
+            <button data-tool="crop" aria-pressed="false" title="C - Crop region">Crop</button>
             <span class="sep"></span>
             <button id="undoBtn" title="Ctrl+Z - Undo">Undo</button>
             <button id="redoBtn" title="Ctrl+Shift+Z - Redo">Redo</button>
@@ -257,6 +258,17 @@
                     title="E - toggle eraser" style="padding:3px 10px;">Erase</button>
             <button id="brushClear" class="secondary"
                     title="Clear this mask" style="padding:3px 10px;">Clear</button>
+        </div>
+        <div class="crop-dock" id="cropDock" data-show="false"
+             style="position:absolute; top:52px; left:8px; z-index:5; display:none; gap:8px;
+                    align-items:center; background:var(--surface-2,#1b1f29); padding:6px 10px;
+                    border-radius:8px; font-size:12px;">
+            <span style="color:var(--fg-muted);">Drag to set the crop region.</span>
+            <span id="cropInfo" style="color:var(--fg-muted);"></span>
+            <button id="cropDownload" class="secondary"
+                    title="Download crop as PNG" style="padding:3px 10px;">Download</button>
+            <button id="cropClear" class="secondary"
+                    title="Remove crop region" style="padding:3px 10px;">Clear</button>
         </div>
         <div id="stage"></div>
         <div class="viewer-empty" id="viewerEmpty" data-show="true">No image loaded.</div>

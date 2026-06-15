@@ -73,6 +73,12 @@ class ImageAnnotation(db.Model):
     confidence = db.Column(db.Integer, nullable=True)
     notes = db.Column(db.Text, nullable=True)
 
+    # Optional crop region the annotator drew (image pixel coords: {x, y, w, h}).
+    # On submit, the cropped image is rendered and stored; crop_path is its
+    # storage reference (resolved through app.services.storage, same as Image.source_path).
+    crop_box = db.Column(db.JSON, nullable=True)
+    crop_path = db.Column(db.String(1024), nullable=True)
+
     created_at = db.Column(db.DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
     submitted_at = db.Column(db.DateTime(timezone=True), nullable=True)
@@ -122,6 +128,8 @@ class ImageAnnotation(db.Model):
                 'confidence': self.confidence,
                 'notes': self.notes,
             },
+            'crop_box': self.crop_box,
+            'has_crop_image': bool(self.crop_path),
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'submitted_at': self.submitted_at.isoformat() if self.submitted_at else None,

@@ -1,6 +1,8 @@
 """Image queue API. Read-only in Phase 1."""
 import base64
+import mimetypes
 import os
+from pathlib import Path
 
 from flask import Blueprint, request, jsonify, send_file, current_app
 from flask_login import login_required, current_user
@@ -11,6 +13,7 @@ from app.extensions import db
 from app.models import Image, ImageAnnotation
 from app.models.enums import AnnotationStatus, ImagePhase
 from app.schemas.image import ImageQueueQuery, ImageOut, ImageQueueResponse
+from app.services import storage
 
 bp = Blueprint('images', __name__, url_prefix='/api/v1/images')
 
@@ -117,13 +120,23 @@ def serve_image_file(image_id: str):
     img = db.session.get(Image, image_id)
     if img is None:
         return error_response('not_found', 'Image not found.', status=404)
-    if not os.path.exists(img.source_path):
+
+    # Fast path: a real local file streams with range/conditional support.
+    if os.path.isabs(img.source_path) and os.path.exists(img.source_path):
+        return send_file(img.source_path, conditional=True)
+
+    # Otherwise pull the bytes from the configured backend (e.g. Supabase).
+    try:
+        handle = storage.open_image(img.source_path)
+    except (FileNotFoundError, storage.StorageError, OSError):
         return error_response(
             'file_missing',
-            f"Source file no longer exists at {img.source_path}",
+            f"Source file is no longer available at {img.source_path}",
             status=410,
         )
-    return send_file(img.source_path, conditional=True)
+    mimetype = mimetypes.guess_type(img.source_path)[0] or 'application/octet-stream'
+    download_name = f"{img.id}{Path(img.source_path).suffix or ''}"
+    return send_file(handle, mimetype=mimetype, download_name=download_name)
 
 
 @bp.get('/datasets')

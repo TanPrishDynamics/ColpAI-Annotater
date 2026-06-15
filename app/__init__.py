@@ -3,6 +3,16 @@ from __future__ import annotations
 
 import os
 
+# Load .env into the environment BEFORE app.config is imported (config reads
+# os.environ at import time). No-op in prod where systemd's EnvironmentFile or
+# real env vars already provide these; harmless if python-dotenv isn't installed.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
 from flask import Flask, jsonify, redirect, request, url_for
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
@@ -16,14 +26,18 @@ from app.views import register_views
 
 @event.listens_for(Engine, 'connect')
 def _enable_sqlite_pragmas(dbapi_conn, _):
-    """WAL mode + foreign keys for SQLite. No-op on other engines."""
-    try:
-        cursor = dbapi_conn.cursor()
-        cursor.execute('PRAGMA journal_mode=WAL')
-        cursor.execute('PRAGMA foreign_keys=ON')
-        cursor.close()
-    except Exception:
-        pass
+    """WAL mode + foreign keys for SQLite. No-op on other engines.
+
+    Guard on the driver module: PRAGMA is invalid on Postgres, and running it
+    there aborts the connection's transaction (psycopg then rejects every
+    following statement with InFailedSqlTransaction), so we must not execute it.
+    """
+    if not dbapi_conn.__class__.__module__.startswith('sqlite3'):
+        return
+    cursor = dbapi_conn.cursor()
+    cursor.execute('PRAGMA journal_mode=WAL')
+    cursor.execute('PRAGMA foreign_keys=ON')
+    cursor.close()
 
 
 def create_app(config_name: str | None = None) -> Flask:

@@ -51,6 +51,9 @@
         selectedRegionId: null,
         tool: 'pan',
 
+        // Crop region (per-annotation). Konva node lives on the region layer.
+        cropNode: null,
+
         // In-flight polygon draft (no server id yet)
         polygonDraft: null,
 
@@ -360,6 +363,95 @@
         };
         state.stage.on('mouseup.masktool', finishStroke);
         state.stage.on('mouseleave.masktool', finishStroke);
+
+        // Crop tool: drag one rectangle that becomes the annotation's crop region.
+        let cropStart = null;
+        let cropDraft = null;
+        state.stage.on('mousedown.croptool', (e) => {
+            if (state.tool !== 'crop' || panning) return;
+            if (state.annotation && state.annotation.status && state.annotation.status !== 'draft') return;
+            const p = imagePointer();
+            if (!p) return;
+            cropStart = p;
+            cropDraft = new Konva.Rect({
+                x: p.x, y: p.y, width: 1, height: 1,
+                stroke: '#ffd166', strokeWidth: 2, dash: [6, 4], listening: false,
+            });
+            state.toolLayer.add(cropDraft);
+        });
+        state.stage.on('mousemove.croptool', () => {
+            if (!cropDraft || !cropStart) return;
+            const p = imagePointer();
+            if (!p) return;
+            cropDraft.x(Math.min(p.x, cropStart.x));
+            cropDraft.y(Math.min(p.y, cropStart.y));
+            cropDraft.width(Math.abs(p.x - cropStart.x));
+            cropDraft.height(Math.abs(p.y - cropStart.y));
+            state.toolLayer.batchDraw();
+        });
+        state.stage.on('mouseup.croptool', () => {
+            if (!cropDraft || !cropStart) return;
+            const geom = {
+                x: Math.round(cropDraft.x()),
+                y: Math.round(cropDraft.y()),
+                w: Math.round(cropDraft.width()),
+                h: Math.round(cropDraft.height()),
+            };
+            cropDraft.destroy();
+            cropDraft = null;
+            cropStart = null;
+            state.toolLayer.batchDraw();
+            if (geom.w < 4 || geom.h < 4) return;
+            setCropBox(geom);
+        });
+    }
+
+    // ---------- Crop region ----------
+    function drawCropBox(box) {
+        if (state.cropNode) { state.cropNode.destroy(); state.cropNode = null; }
+        if (!box || !box.w || !box.h) return;
+        const node = new Konva.Rect({
+            x: box.x, y: box.y, width: box.w, height: box.h,
+            stroke: '#ffd166', strokeWidth: 2, dash: [6, 4],
+            fill: '#ffd16618', listening: false,
+        });
+        state.cropNode = node;
+        state.regionLayer.add(node);
+        state.regionLayer.batchDraw();
+        updateCropInfo(box);
+    }
+
+    function updateCropInfo(box) {
+        const info = document.getElementById('cropInfo');
+        if (info) info.textContent = box && box.w ? `${box.w}×${box.h}px` : '';
+    }
+
+    function setCropBox(geom) {
+        if (state.annotation && state.annotation.status && state.annotation.status !== 'draft') {
+            setPill('Read-only', '');
+            return;
+        }
+        drawCropBox(geom);
+        // Autosave merges this into state.annotation.crop_box and PATCHes it.
+        queueAutosave({crop_box: geom});
+    }
+
+    function clearCrop() {
+        if (state.annotation && state.annotation.status && state.annotation.status !== 'draft') return;
+        if (state.cropNode) { state.cropNode.destroy(); state.cropNode = null; }
+        state.regionLayer.batchDraw();
+        updateCropInfo(null);
+        if (state.annotation && state.annotation.crop_box) {
+            // Zero-area box tells the server to clear the crop.
+            queueAutosave({crop_box: {x: 0, y: 0, w: 0, h: 0}});
+        }
+        if (state.annotation) state.annotation.crop_box = null;
+    }
+
+    function renderCropFromState() {
+        const box = state.annotation?.crop_box;
+        if (box && box.w && box.h) drawCropBox(box);
+        else updateCropInfo(null);
     }
 
     // ---------- Mask brush helpers ----------
@@ -598,6 +690,9 @@
         // Show brush controls only for the mask tool.
         const brushDock = document.getElementById('brushDock');
         if (brushDock) brushDock.style.display = name === 'mask' ? 'flex' : 'none';
+        // Show crop controls only for the crop tool.
+        const cropDock = document.getElementById('cropDock');
+        if (cropDock) cropDock.style.display = name === 'crop' ? 'flex' : 'none';
         stageWrap.style.cursor = name === 'pan' ? '' : 'crosshair';
     }
 
@@ -962,6 +1057,7 @@
         state.nodes.clear();
         state.regions.clear();
         state.maskCanvases.clear();
+        state.cropNode = null;  // destroyed with regionLayer children above
         state.activeMask = null;
         if (state.maskSaveTimer) { clearTimeout(state.maskSaveTimer); state.maskSaveTimer = null; }
         state.undoStack.length = 0;
@@ -1013,6 +1109,7 @@
         renderForm();
         await loadImageOnStage(img);
         if (existing) loadRegionsForCurrentAnnotation();
+        renderCropFromState();
         setPill(existing ? 'Saved' : 'Idle', existing ? 'saved' : '');
     }
 
@@ -1183,6 +1280,19 @@
     const brushClear = document.getElementById('brushClear');
     if (brushClear) brushClear.addEventListener('click', clearActiveMask);
 
+    // ---------- Crop dock buttons ----------
+    const cropClearBtn = document.getElementById('cropClear');
+    if (cropClearBtn) cropClearBtn.addEventListener('click', clearCrop);
+    const cropDownloadBtn = document.getElementById('cropDownload');
+    if (cropDownloadBtn) cropDownloadBtn.addEventListener('click', async () => {
+        if (!state.annotation?.crop_box) { alert('Draw a crop region first.'); return; }
+        // Persist any pending crop edit so the server can render the current box.
+        if (state.saveTimer) { clearTimeout(state.saveTimer); state.saveTimer = null; }
+        await flushSave();
+        if (!state.annotation?.id) return;
+        window.open(`/api/v1/annotations/${state.annotation.id}/crop`, '_blank');
+    });
+
     // ---------- Footer buttons ----------
     document.getElementById('prevBtn').addEventListener('click', () => loadIndex(state.queueIndex - 1));
     document.getElementById('nextBtn').addEventListener('click', () => loadIndex(state.queueIndex + 1));
@@ -1276,6 +1386,9 @@
             if (state.selectedRegionId) {
                 e.preventDefault();
                 deleteRegion(state.selectedRegionId);
+            } else if (state.tool === 'crop' && state.cropNode) {
+                e.preventDefault();
+                clearCrop();
             }
             return;
         }
@@ -1285,6 +1398,7 @@
         if (lower === 'b') { setTool('bbox'); return; }
         if (lower === 'p') { setTool('polygon'); return; }
         if (lower === 'm') { setTool('mask'); return; }
+        if (lower === 'c') { setTool('crop'); return; }
         if (lower === 'e' && state.tool === 'mask') { toggleErase(); return; }
         if (lower === 'd') { document.getElementById('discardBtn').click(); return; }
         const idx = Number(e.key) - 1;

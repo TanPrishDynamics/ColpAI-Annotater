@@ -16,6 +16,7 @@ from PIL import Image as PILImage
 from app.extensions import db
 from app.models import Image
 from app.models.enums import ImagePhase
+from app.services import storage
 
 CHUNK_SIZE = 1024 * 1024  # 1 MiB
 DEFAULT_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff'}
@@ -145,27 +146,38 @@ def ingest_upload(
     dataset_source: str,
     upload_dir: Path,
     extensions: set[str] = DEFAULT_EXTENSIONS,
+    *,
+    patient_code: str | None = None,
+    object_key: str | None = None,
 ) -> UploadResult:
     """Ingest one browser-uploaded image (a werkzeug FileStorage).
 
     Same guarantees as `ingest_directory`: sha256 dedup, dimension read, phase
-    guess. Stored content-addressed (`<sha256>.<ext>`) under `upload_dir` so the
-    existing source_path/send_file serving keeps working. Does NOT commit -- the
-    caller commits once after a batch.
+    guess. Stored via the configured storage backend (local disk or Supabase
+    Storage), and the returned reference is saved as `source_path` so serving /
+    exporting keep working. Does NOT commit -- the caller commits once per batch.
+
+    `object_key` overrides the storage object name (default: `<sha256>.<ext>`);
+    folder uploads pass `PAT-001/<file>` so the bucket groups images per patient.
+    `patient_code` is recorded on the row for grouping/filtering.
+
+    `upload_dir` is accepted for backward compatibility; the local backend reads
+    its destination from `UPLOAD_DIR` in config.
     """
     name = file_storage.filename or 'upload'
-    ext = Path(name).suffix.lower()
+    base_name = Path(name.replace('\\', '/')).name  # folder uploads send a path
+    ext = Path(base_name).suffix.lower()
     if ext not in extensions:
-        return UploadResult(name, 'error', message=f"Unsupported file type: {ext or '(none)'}")
+        return UploadResult(base_name, 'error', message=f"Unsupported file type: {ext or '(none)'}")
 
     data = file_storage.read()
     if not data:
-        return UploadResult(name, 'error', message='Empty file.')
+        return UploadResult(base_name, 'error', message='Empty file.')
 
     digest = hashlib.sha256(data).hexdigest()
     existing = db.session.query(Image).filter_by(sha256=digest).first()
     if existing:
-        return UploadResult(name, 'duplicate', image_id=existing.id)
+        return UploadResult(base_name, 'duplicate', image_id=existing.id)
 
     try:
         with PILImage.open(io.BytesIO(data)) as probe:
@@ -173,18 +185,20 @@ def ingest_upload(
         with PILImage.open(io.BytesIO(data)) as im:
             width, height = im.size              # re-open: verify() consumes the file
     except Exception:
-        return UploadResult(name, 'error', message='Not a readable image.')
+        return UploadResult(base_name, 'error', message='Not a readable image.')
 
-    upload_dir = Path(upload_dir)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    dest = upload_dir / f"{digest}{ext}"
-    with open(dest, 'wb') as f:
-        f.write(data)
+    content_type = file_storage.mimetype or f"image/{ext.lstrip('.') or 'octet-stream'}"
+    key = object_key or f"{digest}{ext}"
+    try:
+        source_ref = storage.save_image(data, key, content_type=content_type)
+    except storage.StorageError as e:
+        return UploadResult(base_name, 'error', message=str(e))
 
     image = Image(
         sha256=digest,
-        source_path=str(dest.resolve()),
+        source_path=source_ref,
         dataset_source=dataset_source,
+        patient_code=patient_code,
         image_phase=detect_phase_from_path(Path(name)),
         width_px=width,
         height_px=height,
@@ -192,4 +206,4 @@ def ingest_upload(
     )
     db.session.add(image)
     db.session.flush()  # assign image.id without committing the batch
-    return UploadResult(name, 'ingested', image_id=image.id)
+    return UploadResult(base_name, 'ingested', image_id=image.id)
