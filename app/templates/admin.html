@@ -17,7 +17,10 @@
     .dl-grid label { margin-bottom: 4px; }
     .dl-grid select { width: auto; }
     .ann-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
-    .ann-card { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-elev, #1a1f29); }
+    .ann-card { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-elev, #1a1f29); position: relative; }
+    .ann-del-btn { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.6); color: #ff5b5b; border: 1px solid #ff5b5b; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; display: none; }
+    .ann-card:hover .ann-del-btn { display: block; }
+    .ann-del-btn:hover { background: #ff5b5b; color: #fff; }
     .ann-card a { display: block; }
     .ann-card img { width: 100%; height: 150px; object-fit: contain; background: #0d1016; display: block; }
     .ann-meta { padding: 6px 8px; font-size: 12px; }
@@ -138,6 +141,16 @@
             </thead>
             <tbody id="patRows"><tr><td colspan="6" class="muted">Loading...</td></tr></tbody>
         </table>
+    </div>
+
+    <div class="card">
+        <h2>Image Browser (All Images)</h2>
+        <p class="muted" style="margin-top:0;">Browse all uploaded images. Use the filter to search by patient code. You can delete any individual image here.</p>
+        <div class="dl-grid" style="margin-bottom:14px; align-items:end;">
+            <div><label>Patient Code (Optional)</label><input id="browsePatient" placeholder="e.g. PAT-001"></div>
+            <div><button class="secondary" onclick="loadBrowser()">Filter</button></div>
+        </div>
+        <div id="browserGallery" class="ann-gallery"><span class="muted">Loading...</span></div>
     </div>
 
     <div class="card">
@@ -375,6 +388,21 @@ function esc(s) {
     return String(s ?? '').replace(/[&<>"]/g, c =>
         ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 }
+
+async function deleteImage(imageId) {
+    if (!confirm('Are you sure you want to permanently delete this image and all its annotations?')) return;
+    try {
+        const d = await api(`/api/v1/admin/images/${imageId}`, { method: 'DELETE' });
+        flash(`Deleted image: ${d.blobs_deleted} blob(s) removed.`);
+        loadAnnotated();
+        loadPatients();
+        refreshDatasetDropdowns();
+        loadBrowser();
+    } catch (e) {
+        flash(e.message, 'error');
+    }
+}
+
 async function loadAnnotated() {
     const grid = document.getElementById('annGallery');
     try {
@@ -383,6 +411,7 @@ async function loadAnnotated() {
         if (!d.count) { grid.innerHTML = '<span class="muted">No completed annotations yet.</span>'; return; }
         grid.innerHTML = d.items.map(a => `
             <div class="ann-card">
+                <button class="ann-del-btn" onclick="deleteImage('${a.image_id}')" title="Delete image">Delete</button>
                 <a href="${a.image_url}" target="_blank" title="Open full size">
                     <img src="${a.image_url}" loading="lazy" alt="${esc(a.patient_code || a.image_id)}">
                 </a>
@@ -390,6 +419,37 @@ async function loadAnnotated() {
                     <strong>${esc(a.patient_code || '(no patient)')}</strong>
                     <div class="muted">${esc(a.impression || 'no impression')} &middot; ${a.region_count} region(s)</div>
                     <div class="muted">${esc(a.annotator)}</div>
+                </div>
+            </div>`).join('');
+    } catch (e) {
+        grid.innerHTML = `<span class="muted">Could not load: ${esc(e.message)}</span>`;
+    }
+}
+
+async function loadBrowser() {
+    const pat = document.getElementById('browsePatient').value.trim();
+    const grid = document.getElementById('browserGallery');
+    grid.innerHTML = '<span class="muted">Loading...</span>';
+    try {
+        let url = '/api/v1/images?status=all&limit=50';
+        if (pat) {
+            url += `&patient_code=${encodeURIComponent(pat)}`;
+        }
+        const d = await api(url);
+        if (!d.items.length) { 
+            grid.innerHTML = '<span class="muted">No images found.</span>'; 
+            return; 
+        }
+        grid.innerHTML = d.items.map(img => `
+            <div class="ann-card">
+                <button class="ann-del-btn" onclick="deleteImage('${img.id}')" title="Delete image">Delete</button>
+                <a href="/api/v1/images/${img.id}/file" target="_blank" title="Open full size">
+                    <img src="/api/v1/images/${img.id}/file" loading="lazy" alt="${esc(img.id)}">
+                </a>
+                <div class="ann-meta">
+                    <strong>${esc(img.patient_code || '(no patient)')}</strong>
+                    <div class="muted">Phase: ${esc(img.image_phase || 'none')}</div>
+                    <div class="muted">ID: ${esc(img.id.slice(0, 8))}</div>
                 </div>
             </div>`).join('');
     } catch (e) {
@@ -444,5 +504,6 @@ loadUsers().catch(e => flash(e.message, 'error'));
 initDownloads();
 loadPatients();
 loadAnnotated();
+loadBrowser();
 </script>
 {% endblock %}
