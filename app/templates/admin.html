@@ -22,6 +22,11 @@
     .ann-card img { width: 100%; height: 150px; object-fit: contain; background: #0d1016; display: block; }
     .ann-meta { padding: 6px 8px; font-size: 12px; }
     .ann-meta .muted { font-size: 11px; }
+    .stat-pill { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+    .stat-done { background: #46c98b33; color: #8fe3bd; }
+    .stat-partial { background: #c9a53133; color: #e6cf86; }
+    .stat-not_started { background: #ff5b5b22; color: var(--danger); }
+    .pat-filter[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
 </style>
 <header>
     <h1>ColpAI &middot; Admin</h1>
@@ -116,6 +121,23 @@
             <button class="secondary" onclick="dl('yolo')">YOLO (zip)</button>
             <button class="secondary" onclick="dl('masks')">Masks (zip)</button>
         </div>
+    </div>
+
+    <div class="card">
+        <h2>Patients</h2>
+        <p class="muted" style="margin-top:0;">Annotation progress per patient. <span id="patSummary"></span></p>
+        <div style="margin-bottom:10px; display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="secondary pat-filter" data-filter="all" aria-pressed="true">All</button>
+            <button class="secondary pat-filter" data-filter="not_started">Not started</button>
+            <button class="secondary pat-filter" data-filter="partial">Partial</button>
+            <button class="secondary pat-filter" data-filter="done">Done</button>
+        </div>
+        <table>
+            <thead>
+                <tr><th>Patient</th><th>Dataset</th><th>Images</th><th>Annotated</th><th>Status</th><th>Action</th></tr>
+            </thead>
+            <tbody id="patRows"><tr><td colspan="6" class="muted">Loading...</td></tr></tbody>
+        </table>
     </div>
 
     <div class="card">
@@ -375,8 +397,52 @@ async function loadAnnotated() {
     }
 }
 
+// ----- patients overview -----
+const STATUS_LABEL = {done: 'Done', partial: 'Partial', not_started: 'Not started'};
+let patAll = [];
+let patFilter = 'all';
+function renderPatients() {
+    const tbody = document.getElementById('patRows');
+    const rows = patFilter === 'all' ? patAll : patAll.filter(p => p.status === patFilter);
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="muted">No patients.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = rows.map(p => `
+        <tr>
+            <td><strong>${esc(p.patient_code)}</strong></td>
+            <td>${esc(p.dataset_source || '')}</td>
+            <td>${p.total_images}</td>
+            <td>${p.annotated_images} / ${p.total_images}</td>
+            <td><span class="stat-pill stat-${p.status}">${STATUS_LABEL[p.status]}</span></td>
+            <td><a class="btn secondary" style="padding:4px 10px; font-size:12px;" href="/annotate?patient=${encodeURIComponent(p.patient_code)}">Annotate</a></td>
+        </tr>`).join('');
+}
+async function loadPatients() {
+    try {
+        const d = await api('/api/v1/admin/patients');
+        patAll = d.items;
+        const s = d.summary;
+        document.getElementById('patSummary').textContent =
+            `${d.count} patients — ${s.done} done, ${s.partial} partial, ${s.not_started} not started.`;
+        renderPatients();
+    } catch (e) {
+        document.getElementById('patRows').innerHTML =
+            `<tr><td colspan="6" class="muted">Could not load: ${esc(e.message)}</td></tr>`;
+    }
+}
+document.querySelectorAll('.pat-filter').forEach(btn => {
+    btn.addEventListener('click', () => {
+        patFilter = btn.dataset.filter;
+        document.querySelectorAll('.pat-filter').forEach(b =>
+            b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'));
+        renderPatients();
+    });
+});
+
 loadUsers().catch(e => flash(e.message, 'error'));
 initDownloads();
+loadPatients();
 loadAnnotated();
 </script>
 {% endblock %}

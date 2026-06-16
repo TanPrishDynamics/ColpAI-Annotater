@@ -25,6 +25,8 @@ IMAGE_COLUMNS = [
     'acetowhitening_severity', 'iodine_pattern', 'vascular_pattern',
     'color_tone', 'surface_contour', 'atypical_vessels_present',
     'colposcopic_impression', 'histopathology_result', 'confidence', 'notes',
+    'reid_margin', 'reid_color', 'reid_vessels', 'reid_iodine', 'reid_total',
+    'swede_aceto', 'swede_margin', 'swede_vessels', 'swede_size', 'swede_iodine', 'swede_total',
     'region_count', 'submitted_at',
 ]
 
@@ -81,6 +83,17 @@ def export_image_csv(selection: ExportSelection) -> str:
             'histopathology_result': _enum(ann.histopathology_result),
             'confidence': ann.confidence,
             'notes': ann.notes,
+            'reid_margin': ann.reid_margin,
+            'reid_color': ann.reid_color,
+            'reid_vessels': ann.reid_vessels,
+            'reid_iodine': ann.reid_iodine,
+            'reid_total': ann.reid_total,
+            'swede_aceto': ann.swede_aceto,
+            'swede_margin': ann.swede_margin,
+            'swede_vessels': ann.swede_vessels,
+            'swede_size': ann.swede_size,
+            'swede_iodine': ann.swede_iodine,
+            'swede_total': ann.swede_total,
             'region_count': len(ann.regions),
             'submitted_at': ann.submitted_at.isoformat() if ann.submitted_at else None,
         })

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 from flask_login import current_user, login_required
-from sqlalchemy import func, select
+from sqlalchemy import case, distinct, func, select
 from werkzeug.utils import secure_filename
 
 from app.api.errors import error_response
@@ -353,3 +353,55 @@ def list_annotated():
     } for ann, img, user in rows]
 
     return jsonify({'items': items, 'count': len(items)})
+
+
+@bp.get('/patients')
+@login_required
+def list_patients():
+    """Per-patient annotation progress: total images vs. images that have a
+    submitted (or better) annotation. Powers the admin patients overview.
+    """
+    guard = _require_admin()
+    if guard is not None:
+        return guard
+
+    submitted_like = (
+        AnnotationStatus.submitted,
+        AnnotationStatus.reviewed,
+        AnnotationStatus.consensus,
+    )
+    annotated_img = case((ImageAnnotation.status.in_(submitted_like), Image.id), else_=None)
+
+    rows = (
+        db.session.query(
+            Image.patient_code,
+            Image.dataset_source,
+            func.count(distinct(Image.id)).label('total'),
+            func.count(distinct(annotated_img)).label('annotated'),
+        )
+        .outerjoin(ImageAnnotation, ImageAnnotation.image_id == Image.id)
+        .filter(Image.patient_code.isnot(None))
+        .group_by(Image.patient_code, Image.dataset_source)
+        .order_by(Image.patient_code)
+        .all()
+    )
+
+    items = []
+    summary = {'done': 0, 'partial': 0, 'not_started': 0}
+    for code, dataset, total, annotated in rows:
+        if annotated == 0:
+            status = 'not_started'
+        elif annotated >= total:
+            status = 'done'
+        else:
+            status = 'partial'
+        summary[status] += 1
+        items.append({
+            'patient_code': code,
+            'dataset_source': dataset,
+            'total_images': total,
+            'annotated_images': annotated,
+            'status': status,
+        })
+
+    return jsonify({'items': items, 'count': len(items), 'summary': summary})

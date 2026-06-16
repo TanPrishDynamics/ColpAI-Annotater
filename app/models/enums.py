@@ -99,6 +99,10 @@ class DiagnosisLabel(str, Enum):
     CIN3 = 'CIN3'
     AIS = 'AIS'
     INVASIVE_CANCER = 'INVASIVE_CANCER'
+    # Benign / non-neoplastic findings.
+    INFLAMMATION = 'INFLAMMATION'
+    INFECTION = 'INFECTION'
+    EROSION = 'EROSION'
 
 
 class AnnotationStatus(str, Enum):

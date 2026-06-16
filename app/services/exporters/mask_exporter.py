@@ -31,6 +31,9 @@ _PALETTE = {
     'CIN3': (220, 0, 0),
     'AIS': (150, 0, 200),
     'INVASIVE_CANCER': (110, 0, 0),
+    'INFLAMMATION': (230, 100, 190),
+    'INFECTION': (0, 180, 180),
+    'EROSION': (190, 110, 30),
 }
 
 

@@ -6,6 +6,7 @@ class ImageQueueQuery(BaseModel):
     """Query params for GET /api/v1/images. All optional."""
     phase: str | None = None
     dataset_source: str | None = None
+    patient_code: str | None = None
     status: str | None = Field(default=None, description="unannotated | mine | reviewed | all")
     limit: int = Field(default=50, ge=1, le=500)
     cursor: str | None = None

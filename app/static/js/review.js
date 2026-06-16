@@ -9,6 +9,9 @@
         CIN3: '#c84a3a',
         AIS: '#8a4fbf',
         INVASIVE_CANCER: '#7a1f1f',
+        INFLAMMATION: '#d65db1',
+        INFECTION: '#00a3a3',
+        EROSION: '#b5651d',
     };
 
     const state = {
@@ -82,8 +85,15 @@
         const ann = state.queue[idx];
         renderQueue();  // refresh aria-selected highlight
         renderAnnotation(ann);
-        await loadImage(ann.image_id);
-        renderRegions(ann);
+        await loadImage(ann);
+        // When a baked annotated image exists (bbox + polygon + mask already drawn
+        // and stored in the bucket), show it as-is; otherwise fall back to the
+        // original image with a client-side region overlay (bbox/polygon only).
+        if (ann.has_crop_image) {
+            overlay.innerHTML = '';
+        } else {
+            renderRegions(ann);
+        }
         approveBtn.disabled = false;
         rejectBtn.disabled = false;
         commentBox.value = '';
@@ -99,11 +109,25 @@
         return `<div class="kv">${rows.map(([k, v]) => `<div class="k">${k}</div><div class="v">${v ?? '<span class="muted">-</span>'}</div>`).join('')}</div>`;
     }
 
+    function reidInterp(t) {
+        if (t == null) return '';
+        if (t <= 2) return ' — Likely CIN 1';
+        if (t <= 4) return ' — Overlapping CIN 1–2';
+        return ' — Likely CIN 2–3';
+    }
+    function swedeInterp(t) {
+        if (t == null) return '';
+        if (t <= 4) return ' — Likely low-grade';
+        if (t <= 7) return ' — Intermediate';
+        return ' — Likely high-grade';
+    }
+
     function renderAnnotation(ann) {
         const q = ann.quality || {};
         const a = ann.anatomy || {};
         const f = ann.features || {};
         const d = ann.diagnosis || {};
+        const sc = ann.scoring || {};
         const regionCount = (ann.regions || []).length;
 
         sidePanel.innerHTML = `
@@ -156,6 +180,26 @@
                     ['Atypical vessels', f.atypical_vessels_present === true ? 'Yes' : f.atypical_vessels_present === false ? 'No' : null],
                 ])}
             </div>
+            <div class="group">
+                <h4>Colposcopic scoring</h4>
+                ${kv([
+                    ['Reid index', sc.reid_total != null
+                        ? `<strong>${sc.reid_total}/8</strong>${reidInterp(sc.reid_total)}`
+                        : '<span class="muted">incomplete</span>'],
+                    ['· Margin', sc.reid_margin],
+                    ['· Colour', sc.reid_color],
+                    ['· Vessels', sc.reid_vessels],
+                    ['· Iodine', sc.reid_iodine],
+                    ['Swede score', sc.swede_total != null
+                        ? `<strong>${sc.swede_total}/10</strong>${swedeInterp(sc.swede_total)}`
+                        : '<span class="muted">incomplete</span>'],
+                    ['· Aceto', sc.swede_aceto],
+                    ['· Margin', sc.swede_margin],
+                    ['· Vessels', sc.swede_vessels],
+                    ['· Size', sc.swede_size],
+                    ['· Iodine', sc.swede_iodine],
+                ])}
+            </div>
         `;
         annotatorLine.textContent = `Annotator: ${ann.annotator_id?.slice(0, 8) || '?'} - submitted ${ann.submitted_at ? new Date(ann.submitted_at).toLocaleString() : '-'}`;
     }
@@ -164,9 +208,14 @@
         return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
-    async function loadImage(imageId) {
+    async function loadImage(ann) {
         viewerEmpty.dataset.show = 'false';
         reviewImg.style.display = '';
+        // Prefer the stored final annotated image (annotated/PAT-NNN/...) which has
+        // every region — including masks — baked in; fall back to the original.
+        const src = ann.has_crop_image
+            ? `/api/v1/annotations/${ann.id}/crop`
+            : `/api/v1/images/${ann.image_id}/file`;
         await new Promise(resolve => {
             reviewImg.onload = () => {
                 state.imageDims = {
@@ -175,7 +224,8 @@
                 };
                 resolve();
             };
-            reviewImg.src = `/api/v1/images/${imageId}/file`;
+            reviewImg.onerror = resolve;  // don't hang the panel on a missing blob
+            reviewImg.src = src;
         });
     }
 

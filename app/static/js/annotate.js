@@ -13,7 +13,8 @@
 // are kept in `state.nodes` keyed by region_id. The list/editor render from `state.regions`.
 
 (() => {
-    const DX_KEYS = ['NORMAL', 'CIN1', 'CIN2', 'CIN3', 'AIS', 'INVASIVE_CANCER'];
+    const DX_KEYS = ['NORMAL', 'CIN1', 'CIN2', 'CIN3', 'AIS', 'INVASIVE_CANCER',
+        'INFLAMMATION', 'INFECTION', 'EROSION'];
     const AUTOSAVE_MS = 800;
     const LABEL_COLOR = {
         NORMAL: '#2e9a5a',
@@ -22,6 +23,9 @@
         CIN3: '#c84a3a',
         AIS: '#8a4fbf',
         INVASIVE_CANCER: '#7a1f1f',
+        INFLAMMATION: '#d65db1',
+        INFECTION: '#00a3a3',
+        EROSION: '#b5651d',
         null: '#7aa3ff',
     };
     const UNDO_LIMIT = 50;
@@ -30,6 +34,7 @@
         queue: [],
         queueCursor: null,
         queueIndex: -1,
+        patient: '',          // '' = all patients
         image: null,
         annotation: null,
         dirty: false,
@@ -1092,8 +1097,15 @@
     }
 
     // ---------- Queue navigation (unchanged logic from Phase 2) ----------
+    function queueUrl(cursor) {
+        let url = '/api/v1/images?status=unannotated&limit=100';
+        if (state.patient) url += `&patient_code=${encodeURIComponent(state.patient)}`;
+        if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
+        return url;
+    }
+
     async function fetchQueue() {
-        const data = await api('/api/v1/images?status=unannotated&limit=100');
+        const data = await api(queueUrl());
         state.queue = data.items;
         state.queueCursor = data.next_cursor;
     }
@@ -1127,7 +1139,7 @@
         if (idx < 0) return;
         if (idx >= state.queue.length) {
             if (state.queueCursor) {
-                const data = await api(`/api/v1/images?status=unannotated&limit=100&cursor=${encodeURIComponent(state.queueCursor)}`);
+                const data = await api(queueUrl(state.queueCursor));
                 state.queue = state.queue.concat(data.items);
                 state.queueCursor = data.next_cursor;
             }
@@ -1172,6 +1184,41 @@
             if (el.type === 'checkbox') el.checked = !!val;
             else el.value = val == null ? '' : String(val);
         });
+        updateScoreTotals();
+    }
+
+    // ---------- Reid / Swede scoring totals ----------
+    function interpretReid(t) {
+        if (t <= 2) return 'Likely CIN 1 (low-grade)';
+        if (t <= 4) return 'Overlapping CIN 1–2';
+        return 'Likely CIN 2–3 (high-grade)';
+    }
+    function interpretSwede(t) {
+        if (t <= 4) return 'Likely low-grade / benign';
+        if (t <= 7) return 'Intermediate';
+        return 'Likely high-grade (consider biopsy/treatment)';
+    }
+    function updateScoreTotals() {
+        const get = f => {
+            const el = document.querySelector(`[data-field="scoring.${f}"]`);
+            return (el && el.value !== '') ? Number(el.value) : null;
+        };
+        const sets = [
+            {parts: ['reid_margin', 'reid_color', 'reid_vessels', 'reid_iodine'],
+             max: 8, tot: 'reidTotal', intp: 'reidInterp', fn: interpretReid},
+            {parts: ['swede_aceto', 'swede_margin', 'swede_vessels', 'swede_size', 'swede_iodine'],
+             max: 10, tot: 'swedeTotal', intp: 'swedeInterp', fn: interpretSwede},
+        ];
+        for (const s of sets) {
+            const totEl = document.getElementById(s.tot);
+            const intpEl = document.getElementById(s.intp);
+            if (!totEl) continue;
+            const vals = s.parts.map(get);
+            const done = vals.every(v => v !== null);
+            const sum = vals.reduce((a, b) => a + (b || 0), 0);
+            totEl.textContent = done ? `${sum} / ${s.max}` : `– / ${s.max}`;
+            if (intpEl) intpEl.textContent = done ? s.fn(sum) : 'Score all criteria for a total.';
+        }
     }
 
     function collectPatchFromField(el) {
@@ -1247,6 +1294,7 @@
             if (el.id === 'confidence') {
                 document.getElementById('confidenceLabel').textContent = `${el.value} / 5`;
             }
+            if (el.dataset.field.startsWith('scoring.')) updateScoreTotals();
             queueAutosave(collectPatchFromField(el));
         });
     });
@@ -1415,13 +1463,58 @@
         }
     });
 
+    // ---------- Patient selector ----------
+    async function loadPatientList() {
+        const sel = document.getElementById('patientSelect');
+        if (!sel) return;
+        try {
+            const d = await api('/api/v1/images/patients');
+            sel.innerHTML = '<option value="">All patients</option>';
+            for (const p of d.items) {
+                const o = document.createElement('option');
+                o.value = p.patient_code;
+                o.textContent = `${p.patient_code} — ${p.remaining} left / ${p.total}`;
+                sel.appendChild(o);
+            }
+            sel.value = state.patient;
+        } catch (e) { /* non-fatal: keep "All patients" */ }
+    }
+
+    async function selectPatient(code) {
+        state.patient = code || '';
+        state.queue = [];
+        state.queueCursor = null;
+        state.queueIndex = -1;
+        await fetchQueue();
+        if (state.queue.length) {
+            await loadIndex(0);
+        } else {
+            setPill('Queue empty', '');
+            viewerEmpty.textContent = state.patient
+                ? `No unannotated images left for ${state.patient}.`
+                : 'You have no unannotated images.';
+            viewerEmpty.dataset.show = 'true';
+            progress.textContent = '0 / 0';
+        }
+    }
+
+    document.getElementById('patientSelect')?.addEventListener('change', (e) => {
+        selectPatient(e.target.value).catch(err => {
+            console.error(err);
+            setPill('Error', 'error');
+        });
+    });
+
     // ---------- Boot ----------
     async function boot() {
         setPill('Loading...', 'saving');
         initStage();
         bindRegionEditor();
+        // Optional ?patient=PAT-001 deep link from the admin patients table.
+        state.patient = new URLSearchParams(location.search).get('patient') || '';
         try {
             await fetchQueue();
+            loadPatientList();   // populate dropdown in the background
             const init = window.ANNOTATE_INIT?.initialImageId;
             if (init) {
                 state.queueIndex = state.queue.findIndex(i => i.id === init);
@@ -1435,7 +1528,9 @@
                 await loadIndex(0);
             } else {
                 setPill('Queue empty', '');
-                viewerEmpty.textContent = 'You have no unannotated images.';
+                viewerEmpty.textContent = state.patient
+                    ? `No unannotated images left for ${state.patient}.`
+                    : 'You have no unannotated images.';
             }
         } catch (err) {
             console.error(err);

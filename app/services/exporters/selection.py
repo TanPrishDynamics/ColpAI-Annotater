@@ -46,6 +46,10 @@ CATEGORY_ORDER: list[DiagnosisLabel] = [
     DiagnosisLabel.CIN3,
     DiagnosisLabel.AIS,
     DiagnosisLabel.INVASIVE_CANCER,
+    # Appended (not reordered) so existing class ids stay stable.
+    DiagnosisLabel.INFLAMMATION,
+    DiagnosisLabel.INFECTION,
+    DiagnosisLabel.EROSION,
 ]
 
 

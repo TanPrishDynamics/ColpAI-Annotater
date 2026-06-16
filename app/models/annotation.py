@@ -73,6 +73,20 @@ class ImageAnnotation(db.Model):
     confidence = db.Column(db.Integer, nullable=True)
     notes = db.Column(db.Text, nullable=True)
 
+    # Colposcopic scoring indices. Each criterion is graded 0/1/2; totals are
+    # derived (see reid_total / swede_total). Reid Colposcopic Index (RCI, 0-8)
+    # and Swede score (0-10).
+    reid_margin = db.Column(db.Integer, nullable=True)
+    reid_color = db.Column(db.Integer, nullable=True)
+    reid_vessels = db.Column(db.Integer, nullable=True)
+    reid_iodine = db.Column(db.Integer, nullable=True)
+
+    swede_aceto = db.Column(db.Integer, nullable=True)
+    swede_margin = db.Column(db.Integer, nullable=True)
+    swede_vessels = db.Column(db.Integer, nullable=True)
+    swede_size = db.Column(db.Integer, nullable=True)
+    swede_iodine = db.Column(db.Integer, nullable=True)
+
     # Optional crop region the annotator drew (image pixel coords: {x, y, w, h}).
     # On submit, the cropped image is rendered and stored; crop_path is its
     # storage reference (resolved through app.services.storage, same as Image.source_path).
@@ -91,7 +105,25 @@ class ImageAnnotation(db.Model):
         cascade='all, delete-orphan',
         lazy='select',
     )
-    review_actions = db.relationship('ReviewAction', back_populates='annotation', lazy='dynamic')
+    review_actions = db.relationship(
+        'ReviewAction',
+        back_populates='annotation',
+        cascade='all, delete-orphan',
+        lazy='dynamic',
+    )
+
+    @property
+    def reid_total(self) -> int | None:
+        """Reid Colposcopic Index total (0-8), or None until all 4 criteria are scored."""
+        parts = (self.reid_margin, self.reid_color, self.reid_vessels, self.reid_iodine)
+        return sum(parts) if all(p is not None for p in parts) else None
+
+    @property
+    def swede_total(self) -> int | None:
+        """Swede score total (0-10), or None until all 5 criteria are scored."""
+        parts = (self.swede_aceto, self.swede_margin, self.swede_vessels,
+                 self.swede_size, self.swede_iodine)
+        return sum(parts) if all(p is not None for p in parts) else None
 
     def to_dict(self, include_regions: bool = False) -> dict:
         out = {
@@ -127,6 +159,19 @@ class ImageAnnotation(db.Model):
                 'histopathology_result': self.histopathology_result.value if self.histopathology_result else None,
                 'confidence': self.confidence,
                 'notes': self.notes,
+            },
+            'scoring': {
+                'reid_margin': self.reid_margin,
+                'reid_color': self.reid_color,
+                'reid_vessels': self.reid_vessels,
+                'reid_iodine': self.reid_iodine,
+                'reid_total': self.reid_total,
+                'swede_aceto': self.swede_aceto,
+                'swede_margin': self.swede_margin,
+                'swede_vessels': self.swede_vessels,
+                'swede_size': self.swede_size,
+                'swede_iodine': self.swede_iodine,
+                'swede_total': self.swede_total,
             },
             'crop_box': self.crop_box,
             'has_crop_image': bool(self.crop_path),

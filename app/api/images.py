@@ -6,7 +6,7 @@ from pathlib import Path
 
 from flask import Blueprint, request, jsonify, send_file, current_app
 from flask_login import login_required, current_user
-from sqlalchemy import and_, exists, select
+from sqlalchemy import and_, case, distinct, exists, func, select
 
 from app.api.errors import error_response
 from app.extensions import db
@@ -52,6 +52,9 @@ def list_images():
 
     if query.dataset_source:
         stmt = stmt.where(Image.dataset_source == query.dataset_source)
+
+    if query.patient_code:
+        stmt = stmt.where(Image.patient_code == query.patient_code)
 
     # "Submitted+" = the user has effectively finished work on this image.
     SUBMITTED_LIKE = (
@@ -147,6 +150,47 @@ def list_datasets():
         select(Image.dataset_source).distinct().order_by(Image.dataset_source)
     ).scalars().all()
     return jsonify({'datasets': rows})
+
+
+@bp.get('/patients')
+@login_required
+def list_patients():
+    """Distinct patient codes with how many images the current user still has to do.
+
+    ``remaining`` = images in the patient that the user hasn't submitted (or better)
+    yet, so the annotate page can let a doctor pick a patient and see what's left.
+    """
+    submitted_like = (
+        AnnotationStatus.submitted,
+        AnnotationStatus.reviewed,
+        AnnotationStatus.consensus,
+    )
+    mine_done = case(
+        (and_(
+            ImageAnnotation.annotator_id == current_user.id,
+            ImageAnnotation.status.in_(submitted_like),
+        ), Image.id),
+        else_=None,
+    )
+    rows = (
+        db.session.query(
+            Image.patient_code,
+            func.count(distinct(Image.id)).label('total'),
+            func.count(distinct(mine_done)).label('done'),
+        )
+        .outerjoin(ImageAnnotation, ImageAnnotation.image_id == Image.id)
+        .filter(Image.patient_code.isnot(None))
+        .group_by(Image.patient_code)
+        .order_by(Image.patient_code)
+        .all()
+    )
+    items = [{
+        'patient_code': code,
+        'total': total,
+        'done': done,
+        'remaining': total - done,
+    } for code, total, done in rows]
+    return jsonify({'items': items})
 
 
 @bp.get('/stats/queue')

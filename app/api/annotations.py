@@ -69,6 +69,13 @@ def _apply_blocks(ann: ImageAnnotation, payload) -> None:
             value = getattr(f, field)
             if value is not None:
                 setattr(ann, field, value)
+    if payload.scoring is not None:
+        s = payload.scoring
+        for field in ('reid_margin', 'reid_color', 'reid_vessels', 'reid_iodine',
+                      'swede_aceto', 'swede_margin', 'swede_vessels', 'swede_size', 'swede_iodine'):
+            value = getattr(s, field)
+            if value is not None:
+                setattr(ann, field, value)
     if payload.diagnosis is not None:
         d = payload.diagnosis
         for field in ('colposcopic_impression', 'histopathology_result', 'confidence', 'notes'):

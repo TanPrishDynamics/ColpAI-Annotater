@@ -46,6 +46,23 @@ class FeaturesBlock(BaseModel):
     atypical_vessels_present: bool | None = None
 
 
+class ScoringBlock(BaseModel):
+    """Colposcopic scoring indices. Each criterion is graded 0/1/2.
+
+    Reid Colposcopic Index = margin + color + vessels + iodine (0-8).
+    Swede score = aceto + margin + vessels + size + iodine (0-10).
+    """
+    reid_margin: int | None = Field(default=None, ge=0, le=2)
+    reid_color: int | None = Field(default=None, ge=0, le=2)
+    reid_vessels: int | None = Field(default=None, ge=0, le=2)
+    reid_iodine: int | None = Field(default=None, ge=0, le=2)
+    swede_aceto: int | None = Field(default=None, ge=0, le=2)
+    swede_margin: int | None = Field(default=None, ge=0, le=2)
+    swede_vessels: int | None = Field(default=None, ge=0, le=2)
+    swede_size: int | None = Field(default=None, ge=0, le=2)
+    swede_iodine: int | None = Field(default=None, ge=0, le=2)
+
+
 class DiagnosisBlock(BaseModel):
     colposcopic_impression: DiagnosisLabel | None = None
     histopathology_result: DiagnosisLabel | None = None
@@ -74,6 +91,7 @@ class AnnotationPatch(BaseModel):
     quality: QualityBlock | None = None
     anatomy: AnatomyBlock | None = None
     features: FeaturesBlock | None = None
+    scoring: ScoringBlock | None = None
     diagnosis: DiagnosisBlock | None = None
     crop_box: CropBox | None = None
 
@@ -83,6 +101,7 @@ class AnnotationSubmit(BaseModel):
     quality: QualityBlock | None = None
     anatomy: AnatomyBlock | None = None
     features: FeaturesBlock | None = None
+    scoring: ScoringBlock | None = None
     diagnosis: DiagnosisBlock | None = None
     crop_box: CropBox | None = None
 

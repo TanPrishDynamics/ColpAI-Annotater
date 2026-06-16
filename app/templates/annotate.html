@@ -163,6 +163,18 @@
     .dx-btn[data-dx="CIN3"][aria-pressed="true"] { background: #c84a3a; border-color: #c84a3a; }
     .dx-btn[data-dx="AIS"][aria-pressed="true"] { background: #8a4fbf; border-color: #8a4fbf; }
     .dx-btn[data-dx="INVASIVE_CANCER"][aria-pressed="true"] { background: #7a1f1f; border-color: #7a1f1f; }
+    .dx-btn[data-dx="INFLAMMATION"][aria-pressed="true"] { background: #d65db1; border-color: #d65db1; }
+    .dx-btn[data-dx="INFECTION"][aria-pressed="true"] { background: #00a3a3; border-color: #00a3a3; }
+    .dx-btn[data-dx="EROSION"][aria-pressed="true"] { background: #b5651d; border-color: #b5651d; }
+
+    .score-section { margin-bottom: 14px; }
+    .score-section label { display: block; margin: 8px 0 2px; font-size: 12px; }
+    .score-section select { width: 100%; }
+    .score-total { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .score-interp { margin-top: 6px; font-size: 12px; }
+
+    .patient-pick { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-muted); }
+    .patient-pick select { width: auto; padding: 4px 8px; font-size: 12px; }
 
     .region-list { display: flex; flex-direction: column; gap: 6px; }
     .region-row {
@@ -229,6 +241,9 @@
     <header>
         <h1>ColpAI Annotator</h1>
         <div class="user-bar">
+            <label class="patient-pick">Patient
+                <select id="patientSelect"><option value="">All patients</option></select>
+            </label>
             <span class="progress" id="progress">- / -</span>
             <span class="pill" id="statusPill">Idle</span>
             <span>{{ user.username }} <span class="muted">({{ user.role.value }})</span></span>
@@ -302,6 +317,9 @@
                         <button type="button" class="dx-btn" data-dx="CIN3">CIN3</button>
                         <button type="button" class="dx-btn" data-dx="AIS">AIS</button>
                         <button type="button" class="dx-btn" data-dx="INVASIVE_CANCER">INVASIVE</button>
+                        <button type="button" class="dx-btn" data-dx="INFLAMMATION">INFLAMMATION</button>
+                        <button type="button" class="dx-btn" data-dx="INFECTION">INFECTION</button>
+                        <button type="button" class="dx-btn" data-dx="EROSION">EROSION</button>
                     </div>
                     <div>
                         <div class="label-row"><label>Confidence</label><span class="muted" id="confidenceLabel">-</span></div>
@@ -317,6 +335,9 @@
                             <option value="CIN3">CIN3</option>
                             <option value="AIS">AIS</option>
                             <option value="INVASIVE_CANCER">INVASIVE_CANCER</option>
+                            <option value="INFLAMMATION">INFLAMMATION</option>
+                            <option value="INFECTION">INFECTION</option>
+                            <option value="EROSION">EROSION</option>
                         </select>
                     </div>
                     <div>
@@ -522,6 +543,92 @@
                 </div>
             </details>
         </div>
+
+        <div class="group">
+            <details>
+                <summary>Colposcopic scoring &mdash; Reid &amp; Swede</summary>
+                <div class="group-body row">
+                    <div class="score-section">
+                        <div class="label-row">
+                            <strong>Reid Colposcopic Index</strong>
+                            <span class="score-total" id="reidTotal">&ndash; / 8</span>
+                        </div>
+                        <label>Margin</label>
+                        <select data-field="scoring.reid_margin">
+                            <option value="">-</option>
+                            <option value="0">0 &middot; Condylomatous/micropapillary; indistinct, feathered or jagged border; satellites</option>
+                            <option value="1">1 &middot; Regular lesion, smooth straight outline</option>
+                            <option value="2">2 &middot; Rolled/peeling edges; internal border (high-grade within low-grade)</option>
+                        </select>
+                        <label>Colour (acetowhite)</label>
+                        <select data-field="scoring.reid_color">
+                            <option value="">-</option>
+                            <option value="0">0 &middot; Shiny snow-white; indistinct/transient</option>
+                            <option value="1">1 &middot; Intermediate shiny grey-white</option>
+                            <option value="2">2 &middot; Dull oyster-grey</option>
+                        </select>
+                        <label>Vessels</label>
+                        <select data-field="scoring.reid_vessels">
+                            <option value="">-</option>
+                            <option value="0">0 &middot; Fine/uniform; poorly-formed punctation/mosaic; vessels beyond TZ</option>
+                            <option value="1">1 &middot; Absent vessels</option>
+                            <option value="2">2 &middot; Coarse punctation/mosaic, well-defined, widely spaced</option>
+                        </select>
+                        <label>Iodine staining</label>
+                        <select data-field="scoring.reid_iodine">
+                            <option value="">-</option>
+                            <option value="0">0 &middot; Iodine-positive (brown); or negative in minor lesion</option>
+                            <option value="1">1 &middot; Partial / variegated speckled uptake</option>
+                            <option value="2">2 &middot; Negative mustard-yellow in significant lesion</option>
+                        </select>
+                        <div class="score-interp muted" id="reidInterp"></div>
+                    </div>
+
+                    <div class="score-section">
+                        <div class="label-row">
+                            <strong>Swede Score</strong>
+                            <span class="score-total" id="swedeTotal">&ndash; / 10</span>
+                        </div>
+                        <label>Acetowhite uptake</label>
+                        <select data-field="scoring.swede_aceto">
+                            <option value="">-</option>
+                            <option value="0">0 &middot; None or transparent</option>
+                            <option value="1">1 &middot; Thin / shady / milky</option>
+                            <option value="2">2 &middot; Distinct, opaque white (stearin)</option>
+                        </select>
+                        <label>Margins &amp; surface</label>
+                        <select data-field="scoring.swede_margin">
+                            <option value="">-</option>
+                            <option value="0">0 &middot; Diffuse / indistinct</option>
+                            <option value="1">1 &middot; Sharp but irregular, jagged, geographic; satellites</option>
+                            <option value="2">2 &middot; Sharp &amp; even; surface-level difference (cuffing)</option>
+                        </select>
+                        <label>Vessels</label>
+                        <select data-field="scoring.swede_vessels">
+                            <option value="">-</option>
+                            <option value="0">0 &middot; Fine, regular</option>
+                            <option value="1">1 &middot; Absent</option>
+                            <option value="2">2 &middot; Coarse or atypical</option>
+                        </select>
+                        <label>Lesion size</label>
+                        <select data-field="scoring.swede_size">
+                            <option value="">-</option>
+                            <option value="0">0 &middot; &lt; 5 mm</option>
+                            <option value="1">1 &middot; 5&ndash;15 mm or 2 quadrants</option>
+                            <option value="2">2 &middot; &gt; 15 mm, 3&ndash;4 quadrants, or endocervically undefined</option>
+                        </select>
+                        <label>Iodine staining</label>
+                        <select data-field="scoring.swede_iodine">
+                            <option value="">-</option>
+                            <option value="0">0 &middot; Brown (iodine-positive)</option>
+                            <option value="1">1 &middot; Faintly or patchy yellow</option>
+                            <option value="2">2 &middot; Distinct yellow</option>
+                        </select>
+                        <div class="score-interp muted" id="swedeInterp"></div>
+                    </div>
+                </div>
+            </details>
+        </div>
     </aside>
 
     <div class="footer-bar">
@@ -543,7 +650,7 @@
     <div class="card">
         <h2>Keyboard shortcuts</h2>
         <table>
-            <tr><td><kbd>1</kbd>-<kbd>6</kbd></td><td>Diagnosis: NORMAL / CIN1 / CIN2 / CIN3 / AIS / INVASIVE</td></tr>
+            <tr><td><kbd>1</kbd>-<kbd>9</kbd></td><td>Diagnosis: NORMAL / CIN1 / CIN2 / CIN3 / AIS / INVASIVE / INFLAMMATION / INFECTION / EROSION</td></tr>
             <tr><td><kbd>V</kbd> / <kbd>B</kbd> / <kbd>P</kbd></td><td>Pan / Bbox / Polygon tool</td></tr>
             <tr><td><kbd>Del</kbd></td><td>Delete selected region</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo</td></tr>
@@ -560,7 +667,7 @@
 </div>
 
 <script>
-    const initialImageId = {{ image_id|default('null', true)|tojson }};
+    const initialImageId = {{ (image_id or none)|tojson }};
     window.ANNOTATE_INIT = { initialImageId };
 </script>
 <script src="https://unpkg.com/konva@9/konva.min.js"></script>

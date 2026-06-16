@@ -154,7 +154,8 @@ def test_coco_structure(app):
     coco = coco_exporter.build_coco(sel)
     assert len(coco['images']) == 1
     assert len(coco['annotations']) == 3
-    assert len(coco['categories']) == 6
+    from app.services.exporters.selection import CATEGORY_ORDER
+    assert len(coco['categories']) == len(CATEGORY_ORDER)
 
     seg_types = {type(a['segmentation']).__name__ for a in coco['annotations']}
     # polygon/bbox -> list, mask -> dict (RLE)
