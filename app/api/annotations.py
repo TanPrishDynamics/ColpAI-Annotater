@@ -29,7 +29,7 @@ from app.schemas.annotation import (
     DiscardRequest,
 )
 from app.services import storage
-from app.services.crop import render_and_store_annotated, render_crop_bytes
+from app.services.crop import render_annotated_bytes, render_crop_bytes
 
 bp = Blueprint('annotations', __name__, url_prefix='/api/v1/annotations')
 
@@ -249,6 +249,40 @@ def serve_crop(annotation_id: str):
     return send_file(io.BytesIO(data), mimetype='image/png', download_name=download_name)
 
 
+@bp.get('/<annotation_id>/annotated')
+@login_required
+def serve_annotated(annotation_id: str):
+    """Serve the *final annotated image*: all regions (bbox, polygon AND mask)
+    composited onto the crop.
+
+    Used by the reviewer workbench so a submitted-but-unapproved annotation can be
+    reviewed with every region baked in -- the client-side overlay can only draw
+    bbox/polygon, so masks would otherwise be invisible before approval.
+
+    Serves the stored image once one exists (after approval); otherwise renders it
+    on the fly without persisting anything to the annotated/ folder.
+    """
+    ann = db.session.get(ImageAnnotation, annotation_id)
+    if ann is None:
+        return error_response('not_found', 'Annotation not found.', status=404)
+    if ann.annotator_id != current_user.id and current_user.role.value not in {'reviewer', 'admin'}:
+        return error_response('forbidden', 'You cannot read another annotator\'s work.', status=403)
+
+    download_name = f"annotated_{ann.id}.png"
+    if ann.crop_path:
+        try:
+            handle = storage.open_image(ann.crop_path)
+        except (FileNotFoundError, storage.StorageError, OSError):
+            handle = None
+        if handle is not None:
+            return send_file(handle, mimetype='image/png', download_name=download_name)
+
+    data = render_annotated_bytes(ann)
+    if data is None:
+        return error_response('unreadable_source', 'The source image could not be read.', status=404)
+    return send_file(io.BytesIO(data), mimetype='image/png', download_name=download_name)
+
+
 @bp.patch('/<annotation_id>')
 @login_required
 def autosave(annotation_id: str):
@@ -302,12 +336,10 @@ def submit(annotation_id: str):
     ann.status = AnnotationStatus.submitted
     ann.submitted_at = _utcnow()
 
-    # Render and store the final annotated image (crop region with the drawn
-    # regions on it) now that the work is complete, under annotated/<patient>/.
-    # Non-fatal: a missing/unreadable source just leaves crop_path unset.
-    if ann.crop_box or ann.regions:
-        ann.crop_path = render_and_store_annotated(ann)
-
+    # NB: the final annotated image is NOT stored under annotated/<patient>/ here.
+    # It is only rendered and uploaded once a reviewer approves the annotation
+    # (see app/api/review.py). A submitted-but-unreviewed annotation therefore has
+    # no crop_path; its crop preview is rendered on the fly by serve_crop.
     db.session.commit()
     return jsonify(ann.to_dict(include_regions=True))
 

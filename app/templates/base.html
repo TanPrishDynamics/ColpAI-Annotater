@@ -1,26 +1,31 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}ColpAI Annotator{% endblock %}</title>
     <style>
-        :root[data-theme="dark"] {
-            --bg: #0f1115;
-            --surface: #1a1d24;
-            --surface-2: #232730;
-            --fg: #e6e8ee;
-            --fg-muted: #8b91a0;
-            --accent: #4f8cff;
-            --accent-hover: #3a78ed;
-            --danger: #ff5b5b;
-            --success: #46c98b;
-            --border: #2a2f3a;
+        @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Noto+Sans:wght@400;500;600;700&display=swap');
+
+        :root[data-theme="light"] {
+            --bg: #F0FDFA;
+            --surface: #FFFFFF;
+            --surface-2: #E0F2FE;
+            --fg: #134E4A;
+            --fg-muted: #475569;
+            --accent: #0891B2;
+            --accent-hover: #0E7490;
+            --danger: #EF4444;
+            --success: #10B981;
+            --border: #CCFBF1;
+            --border-strong: #99F6E4;
+            --font-heading: 'Figtree', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-body: 'Noto Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         }
         * { box-sizing: border-box; }
         body {
             margin: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: var(--font-body);
             background: var(--bg);
             color: var(--fg);
             min-height: 100vh;
@@ -30,15 +35,17 @@
         header {
             padding: 16px 32px;
             background: var(--surface);
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--border-strong);
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
         header h1 {
             margin: 0;
-            font-size: 18px;
-            font-weight: 600;
+            font-family: var(--font-heading);
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--accent);
             letter-spacing: 0.5px;
         }
         header .user-bar {
@@ -85,12 +92,16 @@
             color: white;
             border: none;
             padding: 10px 20px;
+            min-height: 44px;
             border-radius: 8px;
             cursor: pointer;
             font-size: 14px;
             font-weight: 500;
             text-decoration: none;
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
         }
         button:hover, .btn:hover { background: var(--accent-hover); }
         button.secondary, .btn.secondary {
@@ -101,15 +112,17 @@
         button.secondary:hover, .btn.secondary:hover { background: var(--border); }
         button.danger { background: var(--danger); }
         input, select {
-            background: var(--surface-2);
+            background: var(--surface);
             color: var(--fg);
-            border: 1px solid var(--border);
+            border: 1px solid var(--border-strong);
             border-radius: 8px;
             padding: 10px 12px;
+            min-height: 44px;
             font-size: 14px;
             width: 100%;
+            transition: all 0.2s ease;
         }
-        input:focus, select:focus { outline: none; border-color: var(--accent); }
+        input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
         label { display: block; font-size: 13px; color: var(--fg-muted); margin-bottom: 6px; }
         .field { margin-bottom: 16px; }
         .alert {

@@ -86,14 +86,10 @@
         renderQueue();  // refresh aria-selected highlight
         renderAnnotation(ann);
         await loadImage(ann);
-        // When a baked annotated image exists (bbox + polygon + mask already drawn
-        // and stored in the bucket), show it as-is; otherwise fall back to the
-        // original image with a client-side region overlay (bbox/polygon only).
-        if (ann.has_crop_image) {
-            overlay.innerHTML = '';
-        } else {
-            renderRegions(ann);
-        }
+        // The image is always the server-rendered annotated preview, which bakes in
+        // every region type -- bbox, polygon AND mask. (The client-side SVG overlay
+        // can't draw masks, so we don't use it here.)
+        overlay.innerHTML = '';
         approveBtn.disabled = false;
         rejectBtn.disabled = false;
         commentBox.value = '';
@@ -211,12 +207,12 @@
     async function loadImage(ann) {
         viewerEmpty.dataset.show = 'false';
         reviewImg.style.display = '';
-        // Prefer the stored final annotated image (annotated/PAT-NNN/...) which has
-        // every region — including masks — baked in; fall back to the original.
-        const src = ann.has_crop_image
-            ? `/api/v1/annotations/${ann.id}/crop`
-            : `/api/v1/images/${ann.image_id}/file`;
+        // Always show the server-rendered annotated image, which has every region —
+        // including masks — baked in. It's served from the stored file once the
+        // annotation is approved, or rendered on the fly before that. If the source
+        // can't be read, fall back to the original image.
         await new Promise(resolve => {
+            let usedFallback = false;
             reviewImg.onload = () => {
                 state.imageDims = {
                     naturalW: reviewImg.naturalWidth,
@@ -224,8 +220,15 @@
                 };
                 resolve();
             };
-            reviewImg.onerror = resolve;  // don't hang the panel on a missing blob
-            reviewImg.src = src;
+            reviewImg.onerror = () => {
+                if (!usedFallback) {
+                    usedFallback = true;
+                    reviewImg.src = `/api/v1/images/${ann.image_id}/file`;
+                    return;
+                }
+                resolve();  // don't hang the panel on a missing blob
+            };
+            reviewImg.src = `/api/v1/annotations/${ann.id}/annotated`;
         });
     }
 

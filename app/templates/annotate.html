@@ -54,12 +54,13 @@
         left: 16px;
         display: flex;
         gap: 6px;
-        background: rgba(15, 17, 21, 0.85);
-        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid var(--border-strong);
         border-radius: 10px;
         padding: 6px;
         backdrop-filter: blur(4px);
         z-index: 5;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
     .tool-dock button {
         background: var(--surface-2);
@@ -85,8 +86,8 @@
         bottom: 16px;
         left: 16px;
         right: 16px;
-        background: rgba(15, 17, 21, 0.75);
-        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid var(--border-strong);
         border-radius: 10px;
         padding: 10px 14px;
         display: grid;
@@ -97,16 +98,57 @@
         color: var(--fg-muted);
         backdrop-filter: blur(4px);
         z-index: 5;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
     .viewer-controls input[type="range"] { width: 100%; padding: 0; }
 
     .side {
         background: var(--surface);
-        border-left: 1px solid var(--border);
+        border-left: 1px solid var(--border-strong);
         overflow-y: auto;
         padding: 0;
+        display: flex;
+        flex-direction: column;
     }
-    .side .group { border-bottom: 1px solid var(--border); }
+    .tabs-header {
+        display: flex;
+        background: var(--surface-2);
+        border-bottom: 1px solid var(--border-strong);
+        padding: 8px 12px 0 12px;
+        gap: 4px;
+        flex-shrink: 0;
+        overflow-x: auto;
+    }
+    .tab-btn {
+        background: transparent;
+        border: none;
+        padding: 10px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--fg-muted);
+        cursor: pointer;
+        border-radius: 8px 8px 0 0;
+        min-height: auto;
+        border-bottom: 2px solid transparent;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--accent); }
+    .tab-btn.active {
+        background: var(--surface);
+        color: var(--accent);
+        border-bottom: 2px solid var(--accent);
+    }
+    .tab-content {
+        display: none;
+        flex: 1;
+        overflow-y: auto;
+        padding-bottom: 20px;
+    }
+    .tab-content.active {
+        display: block;
+    }
+    .side .group { border-bottom: 1px solid var(--border-strong); }
     .side details > summary {
         cursor: pointer;
         list-style: none;
@@ -146,26 +188,27 @@
         gap: 8px;
     }
     .dx-btn {
-        background: var(--surface-2);
+        background: var(--surface);
         color: var(--fg);
-        border: 1px solid var(--border);
+        border: 1px solid var(--border-strong);
         border-radius: 8px;
         padding: 12px 6px;
         font-size: 13px;
         cursor: pointer;
         text-align: center;
         font-weight: 600;
+        transition: all 0.2s ease;
     }
     .dx-btn[aria-pressed="true"] { background: var(--accent); color: white; border-color: var(--accent); }
-    .dx-btn[data-dx="NORMAL"][aria-pressed="true"] { background: #2e9a5a; border-color: #2e9a5a; }
-    .dx-btn[data-dx="CIN1"][aria-pressed="true"] { background: #c9a531; border-color: #c9a531; }
-    .dx-btn[data-dx="CIN2"][aria-pressed="true"] { background: #cf7a31; border-color: #cf7a31; }
-    .dx-btn[data-dx="CIN3"][aria-pressed="true"] { background: #c84a3a; border-color: #c84a3a; }
-    .dx-btn[data-dx="AIS"][aria-pressed="true"] { background: #8a4fbf; border-color: #8a4fbf; }
-    .dx-btn[data-dx="INVASIVE_CANCER"][aria-pressed="true"] { background: #7a1f1f; border-color: #7a1f1f; }
-    .dx-btn[data-dx="INFLAMMATION"][aria-pressed="true"] { background: #d65db1; border-color: #d65db1; }
-    .dx-btn[data-dx="INFECTION"][aria-pressed="true"] { background: #00a3a3; border-color: #00a3a3; }
-    .dx-btn[data-dx="EROSION"][aria-pressed="true"] { background: #b5651d; border-color: #b5651d; }
+    .dx-btn[data-dx="NORMAL"][aria-pressed="true"] { background: #10B981; border-color: #10B981; color: white; }
+    .dx-btn[data-dx="CIN1"][aria-pressed="true"] { background: #F59E0B; border-color: #F59E0B; color: white; }
+    .dx-btn[data-dx="CIN2"][aria-pressed="true"] { background: #EA580C; border-color: #EA580C; color: white; }
+    .dx-btn[data-dx="CIN3"][aria-pressed="true"] { background: #DC2626; border-color: #DC2626; color: white; }
+    .dx-btn[data-dx="AIS"][aria-pressed="true"] { background: #7C3AED; border-color: #7C3AED; color: white; }
+    .dx-btn[data-dx="INVASIVE_CANCER"][aria-pressed="true"] { background: #991B1B; border-color: #991B1B; color: white; }
+    .dx-btn[data-dx="INFLAMMATION"][aria-pressed="true"] { background: #DB2777; border-color: #DB2777; color: white; }
+    .dx-btn[data-dx="INFECTION"][aria-pressed="true"] { background: #0891B2; border-color: #0891B2; color: white; }
+    .dx-btn[data-dx="EROSION"][aria-pressed="true"] { background: #D97706; border-color: #D97706; color: white; }
 
     .score-section { margin-bottom: 14px; }
     .score-section label { display: block; margin: 8px 0 2px; font-size: 12px; }
@@ -217,7 +260,8 @@
     .shortcut-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(15,17,21,0.85);
+        background: rgba(255,255,255,0.85);
+        backdrop-filter: blur(4px);
         display: none;
         align-items: center;
         justify-content: center;
@@ -263,27 +307,27 @@
             <button id="redoBtn" title="Ctrl+Shift+Z - Redo">Redo</button>
         </div>
         <div class="brush-dock" id="brushDock" data-show="false"
-             style="position:absolute; top:52px; left:8px; z-index:5; display:none; gap:8px;
-                    align-items:center; background:var(--surface-2,#1b1f29); padding:6px 10px;
-                    border-radius:8px; font-size:12px;">
+             style="position:absolute; top:64px; left:16px; z-index:5; display:none; gap:8px;
+                    align-items:center; background:rgba(255,255,255,0.9); padding:6px 10px;
+                    border:1px solid var(--border-strong); border-radius:8px; font-size:12px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
             <label for="brushSize" style="color:var(--fg-muted);">Brush</label>
-            <input type="range" id="brushSize" min="4" max="120" value="28" style="width:90px;">
+            <input type="range" id="brushSize" min="4" max="120" value="28" style="width:90px; min-height: 20px;">
             <span id="brushSizeLabel" style="color:var(--fg-muted); width:34px;">28px</span>
             <button id="brushErase" class="secondary" aria-pressed="false"
-                    title="E - toggle eraser" style="padding:3px 10px;">Erase</button>
+                    title="E - toggle eraser" style="padding:4px 10px; min-height:32px;">Erase</button>
             <button id="brushClear" class="secondary"
-                    title="Clear this mask" style="padding:3px 10px;">Clear</button>
+                    title="Clear this mask" style="padding:4px 10px; min-height:32px;">Clear</button>
         </div>
         <div class="crop-dock" id="cropDock" data-show="false"
-             style="position:absolute; top:52px; left:8px; z-index:5; display:none; gap:8px;
-                    align-items:center; background:var(--surface-2,#1b1f29); padding:6px 10px;
-                    border-radius:8px; font-size:12px;">
+             style="position:absolute; top:64px; left:16px; z-index:5; display:none; gap:8px;
+                    align-items:center; background:rgba(255,255,255,0.9); padding:6px 10px;
+                    border:1px solid var(--border-strong); border-radius:8px; font-size:12px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
             <span style="color:var(--fg-muted);">Drag to set the crop region.</span>
             <span id="cropInfo" style="color:var(--fg-muted);"></span>
             <button id="cropDownload" class="secondary"
-                    title="Download crop as PNG" style="padding:3px 10px;">Download</button>
+                    title="Download crop as PNG" style="padding:4px 10px; min-height:32px;">Download</button>
             <button id="cropClear" class="secondary"
-                    title="Remove crop region" style="padding:3px 10px;">Clear</button>
+                    title="Remove crop region" style="padding:4px 10px; min-height:32px;">Clear</button>
         </div>
         <div id="stage"></div>
         <div class="viewer-empty" id="viewerEmpty" data-show="true">No image loaded.</div>
@@ -297,6 +341,13 @@
     </div>
 
     <aside class="side">
+        <div class="tabs-header">
+            <button class="tab-btn active" onclick="switchTab('tab-diagnose')" type="button">Diagnose & Regions</button>
+            <button class="tab-btn" onclick="switchTab('tab-quality')" type="button">QA & Anatomy</button>
+            <button class="tab-btn" onclick="switchTab('tab-scoring')" type="button">Advanced Scoring</button>
+        </div>
+
+        <div class="tab-content active" id="tab-diagnose">
         <div class="group">
             <details open>
                 <summary>Image metadata</summary>
@@ -418,8 +469,11 @@
             </details>
         </div>
 
+        </div> <!-- End of tab-diagnose -->
+
+        <div class="tab-content" id="tab-quality">
         <div class="group">
-            <details>
+            <details open>
                 <summary>Quality</summary>
                 <div class="group-body row">
                     <div>
@@ -454,7 +508,7 @@
         </div>
 
         <div class="group">
-            <details>
+            <details open>
                 <summary>Anatomy</summary>
                 <div class="group-body row">
                     <div>
@@ -491,8 +545,11 @@
             </details>
         </div>
 
+        </div> <!-- End of tab-quality -->
+
+        <div class="tab-content" id="tab-scoring">
         <div class="group">
-            <details>
+            <details open>
                 <summary>Global colposcopic features</summary>
                 <div class="group-body row">
                     <div class="row-2">
@@ -545,7 +602,7 @@
         </div>
 
         <div class="group">
-            <details>
+            <details open>
                 <summary>Colposcopic scoring &mdash; Reid &amp; Swede</summary>
                 <div class="group-body row">
                     <div class="score-section">
@@ -629,7 +686,19 @@
                 </div>
             </details>
         </div>
+        </div> <!-- End of tab-scoring -->
     </aside>
+
+    <script>
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('onclick').includes(tabId));
+            });
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.toggle('active', content.id === tabId);
+            });
+        }
+    </script>
 
     <div class="footer-bar">
         <div class="left">

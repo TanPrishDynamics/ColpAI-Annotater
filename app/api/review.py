@@ -21,6 +21,7 @@ from app.models import ImageAnnotation, ReviewAction
 from app.models.enums import AnnotationStatus, ReviewActionType, UserRole
 from app.schemas.review import ReviewActionBody, ReviewQueueQuery
 from app.services import consensus
+from app.services.crop import render_and_store_annotated
 
 bp = Blueprint('review', __name__, url_prefix='/api/v1/review')
 
@@ -114,6 +115,11 @@ def _record_action(annotation_id: str, action: ReviewActionType, comment: str | 
 
     if action == ReviewActionType.approve:
         ann.status = AnnotationStatus.reviewed
+        # Only once a reviewer approves do we render and store the final annotated
+        # image (drawn regions composited on the crop) under annotated/<patient>/.
+        # Non-fatal: a missing/unreadable source just leaves crop_path unset.
+        if ann.crop_box or ann.regions:
+            ann.crop_path = render_and_store_annotated(ann)
     elif action == ReviewActionType.reject:
         # Rejection sends the annotator back to drafting (new version).
         ann.status = AnnotationStatus.superseded

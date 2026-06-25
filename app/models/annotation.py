@@ -88,8 +88,10 @@ class ImageAnnotation(db.Model):
     swede_iodine = db.Column(db.Integer, nullable=True)
 
     # Optional crop region the annotator drew (image pixel coords: {x, y, w, h}).
-    # On submit, the cropped image is rendered and stored; crop_path is its
-    # storage reference (resolved through app.services.storage, same as Image.source_path).
+    # On reviewer approval, the final annotated image is rendered and stored under
+    # annotated/<patient>/; crop_path is its storage reference (resolved through
+    # app.services.storage, same as Image.source_path). It stays unset for drafts
+    # and submitted-but-unreviewed annotations.
     crop_box = db.Column(db.JSON, nullable=True)
     crop_path = db.Column(db.String(1024), nullable=True)
 

@@ -319,10 +319,12 @@ def delete_image(image_id: str):
 @bp.get('/annotated')
 @login_required
 def list_annotated():
-    """List every submitted annotation that has a stored final annotated image.
+    """List every reviewer-approved annotation that has a stored final annotated image.
 
-    Powers the admin gallery; each item's image is served from the existing
-    ``/api/v1/annotations/<id>/crop`` endpoint (admins may read any annotation).
+    The final annotated image is only rendered and stored once a reviewer approves
+    (status ``reviewed``), so the gallery shows approved work. Each item's image is
+    served from the existing ``/api/v1/annotations/<id>/crop`` endpoint (admins may
+    read any annotation).
     """
     guard = _require_admin()
     if guard is not None:
@@ -333,7 +335,7 @@ def list_annotated():
         .join(Image, ImageAnnotation.image_id == Image.id)
         .join(User, ImageAnnotation.annotator_id == User.id)
         .filter(
-            ImageAnnotation.status == AnnotationStatus.submitted,
+            ImageAnnotation.status == AnnotationStatus.reviewed,
             ImageAnnotation.crop_path.isnot(None),
         )
         .order_by(ImageAnnotation.submitted_at.desc())
