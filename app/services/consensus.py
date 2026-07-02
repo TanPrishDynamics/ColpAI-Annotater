@@ -29,14 +29,14 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def majority_label(annotations: list[ImageAnnotation]) -> tuple[DiagnosisLabel | None, float, list[str]]:
-    """Pick the modal `colposcopic_impression`. Ties broken by mean confidence (higher wins).
+def majority_label(annotations: list[ImageAnnotation]) -> tuple[list[str] | None, float, list[str]]:
+    """Pick the modal `colposcopic_impression` (exact set match). Ties broken by mean confidence (higher wins).
 
     Returns (label, agreement_score, derived_from_ids). agreement_score is the share of
     annotators that picked the chosen label, in [0, 1]. None when the input is empty
     or no annotation has a label.
     """
-    labels = [a.colposcopic_impression for a in annotations if a.colposcopic_impression is not None]
+    labels = [tuple(sorted(a.colposcopic_impression)) for a in annotations if a.colposcopic_impression]
     if not labels:
         return None, 0.0, []
 
@@ -51,23 +51,23 @@ def majority_label(annotations: list[ImageAnnotation]) -> tuple[DiagnosisLabel |
         winner = tied[0]
     else:
         # Tie-break by mean confidence among annotators that picked each tied label.
-        def mean_conf(lbl: DiagnosisLabel) -> float:
+        def mean_conf(lbl: tuple) -> float:
             confs = [a.confidence for a in annotations
-                     if a.colposcopic_impression == lbl and a.confidence is not None]
+                     if a.colposcopic_impression and tuple(sorted(a.colposcopic_impression)) == lbl and a.confidence is not None]
             return sum(confs) / len(confs) if confs else 0.0
         winner = max(tied, key=mean_conf)
 
     agreement = top_count / len(labels)
-    derived = [a.id for a in annotations if a.colposcopic_impression == winner]
-    return winner, agreement, derived
+    derived = [a.id for a in annotations if a.colposcopic_impression and tuple(sorted(a.colposcopic_impression)) == winner]
+    return list(winner), agreement, derived
 
 
 def percent_agreement(annotations: list[ImageAnnotation]) -> float | None:
-    """Across all pairs of annotators, the fraction that agree on `colposcopic_impression`.
+    """Across all pairs of annotators, the fraction that agree on `colposcopic_impression` (exact match).
 
     Returns None if fewer than 2 annotators have labelled this image.
     """
-    labels = [a.colposcopic_impression for a in annotations if a.colposcopic_impression is not None]
+    labels = [tuple(sorted(a.colposcopic_impression)) for a in annotations if a.colposcopic_impression]
     if len(labels) < 2:
         return None
     pairs = list(combinations(labels, 2))
@@ -92,10 +92,10 @@ def cohen_kappa(labels_a: list[str], labels_b: list[str]) -> float | None:
     return (p_o - p_e) / (1 - p_e)
 
 
-def pairwise_kappa(image_label_map: dict[str, dict[str, str]]) -> float | None:
+def pairwise_kappa(image_label_map: dict[str, dict[str, tuple]]) -> float | None:
     """Average pairwise Cohen's kappa across all (rater_i, rater_j) pairs.
 
-    `image_label_map` maps annotator_id -> {image_id: label}. We compute kappa only on
+    `image_label_map` maps annotator_id -> {image_id: tuple(sorted_labels)}. We compute kappa only on
     images both raters have labelled, then average across pairs.
     """
     raters = list(image_label_map.keys())
@@ -182,11 +182,11 @@ def find_disagreement_images() -> list[dict]:
     out = []
     for (img_id,) in rows:
         anns = submitted_for_image(img_id)
-        labels = {a.colposcopic_impression for a in anns if a.colposcopic_impression is not None}
+        labels = {tuple(sorted(a.colposcopic_impression)) for a in anns if a.colposcopic_impression}
         if len(labels) > 1:
             out.append({
                 'image_id': img_id,
-                'labels': sorted(l.value for l in labels),
+                'labels': [list(l) for l in labels],
                 'annotator_count': len(anns),
                 'agreement': percent_agreement(anns),
             })

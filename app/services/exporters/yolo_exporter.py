@@ -37,8 +37,14 @@ def build_yolo_zip(selection: ExportSelection) -> bytes:
 
             lines: list[str] = []
             for region in ann.regions:
-                label = region.lesion_label or ann.colposcopic_impression
-                if label is None or label.value not in class_id:
+                if region.lesion_label:
+                    label_val = region.lesion_label.value
+                elif ann.colposcopic_impression:
+                    label_val = ann.colposcopic_impression[0]
+                else:
+                    label_val = None
+
+                if not label_val or label_val not in class_id:
                     continue
                 bbox = geo.region_bbox(region)
                 if bbox is None:
@@ -52,7 +58,7 @@ def build_yolo_zip(selection: ExportSelection) -> bytes:
                 cx, cy = _clamp01(cx), _clamp01(cy)
                 nw, nh = _clamp01(nw), _clamp01(nh)
                 lines.append(
-                    f"{class_id[label.value]} {cx:.6f} {cy:.6f} {nw:.6f} {nh:.6f}"
+                    f"{class_id[label_val]} {cx:.6f} {cy:.6f} {nw:.6f} {nh:.6f}"
                 )
 
             label_file = f"labels/{image.id}.txt"

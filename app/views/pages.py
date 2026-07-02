@@ -30,12 +30,16 @@ def dashboard():
 def annotate():
     """Annotation workbench. The page boots without an image id and asks the
     server for the next unannotated image once loaded."""
+    if current_user.role.value == 'reviewer':
+        return redirect(url_for('pages.review'))
     return render_template('annotate.html', user=current_user)
 
 
 @bp.get('/annotate/<image_id>')
 @login_required
 def annotate_image(image_id: str):
+    if current_user.role.value == 'reviewer':
+        return redirect(url_for('pages.review'))
     return render_template('annotate.html', user=current_user, image_id=image_id)
 
 

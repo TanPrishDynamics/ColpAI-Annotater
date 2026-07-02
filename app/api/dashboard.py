@@ -115,16 +115,22 @@ def stats():
 def distribution():
     """Counts of `colposcopic_impression` across submitted annotations."""
     stmt = (
-        select(ImageAnnotation.colposcopic_impression, func.count(ImageAnnotation.id))
+        select(ImageAnnotation.colposcopic_impression)
         .where(ImageAnnotation.status.in_(SUBMITTED_LIKE))
         .where(ImageAnnotation.colposcopic_impression.isnot(None))
     )
     if not _is_admin():
         stmt = stmt.where(ImageAnnotation.annotator_id == current_user.id)
-    stmt = stmt.group_by(ImageAnnotation.colposcopic_impression)
-    rows = db.session.execute(stmt).all()
+        
+    rows = db.session.execute(stmt).scalars().all()
+    counts = defaultdict(int)
+    for labels in rows:
+        if isinstance(labels, list):
+            for label in labels:
+                counts[label] += 1
+                
     return jsonify({
-        'items': [{'label': label.value, 'count': n} for label, n in rows]
+        'items': [{'label': label, 'count': n} for label, n in counts.items()]
     })
 
 
@@ -177,23 +183,25 @@ def agreement():
     )
     rows = db.session.execute(stmt).all()
 
-    by_rater: dict[str, dict[str, str]] = defaultdict(dict)
-    for annotator_id, image_id, label in rows:
-        by_rater[annotator_id][image_id] = label.value
+    by_rater: dict[str, dict[str, tuple]] = defaultdict(dict)
+    for annotator_id, image_id, labels in rows:
+        if isinstance(labels, list) and labels:
+            by_rater[annotator_id][image_id] = tuple(sorted(labels))
 
     kappa = consensus.pairwise_kappa(by_rater)
 
     # Also compute mean percent-agreement for an easier-to-read second number.
     image_to_labels: dict[str, list] = defaultdict(list)
-    for annotator_id, image_id, label in rows:
-        image_to_labels[image_id].append(label)
+    for annotator_id, image_id, labels in rows:
+        if isinstance(labels, list) and labels:
+            image_to_labels[image_id].append(tuple(sorted(labels)))
     agreements: list[float] = []
-    for image_id, labels in image_to_labels.items():
-        if len(labels) < 2:
+    for image_id, label_tuples in image_to_labels.items():
+        if len(label_tuples) < 2:
             continue
         # percent agreement = pairs that match / total pairs.
         from itertools import combinations
-        pairs = list(combinations(labels, 2))
+        pairs = list(combinations(label_tuples, 2))
         agreements.append(sum(1 for a, b in pairs if a == b) / len(pairs))
 
     return jsonify({

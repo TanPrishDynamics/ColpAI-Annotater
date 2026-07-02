@@ -78,7 +78,9 @@ def _apply_blocks(ann: ImageAnnotation, payload) -> None:
                 setattr(ann, field, value)
     if payload.diagnosis is not None:
         d = payload.diagnosis
-        for field in ('colposcopic_impression', 'histopathology_result', 'confidence', 'notes'):
+        if d.colposcopic_impression is not None:
+            ann.colposcopic_impression = [v.value for v in d.colposcopic_impression]
+        for field in ('histopathology_result', 'confidence', 'notes'):
             value = getattr(d, field)
             if value is not None:
                 setattr(ann, field, value)
@@ -328,7 +330,7 @@ def submit(annotation_id: str):
     # Re-validate the merged row against the submit schema.
     AnnotationSubmit.model_validate({
         'diagnosis': {
-            'colposcopic_impression': ann.colposcopic_impression.value if ann.colposcopic_impression else None,
+            'colposcopic_impression': ann.colposcopic_impression or [],
             'confidence': ann.confidence,
         },
     })

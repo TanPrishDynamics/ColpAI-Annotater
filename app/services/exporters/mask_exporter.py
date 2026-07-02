@@ -49,23 +49,26 @@ def build_mask_zip(selection: ExportSelection) -> bytes:
 
             semantic = np.zeros((h, w), dtype=np.uint8)
 
+            def _get_label(r):
+                if r.lesion_label:
+                    return r.lesion_label.value
+                elif ann.colposcopic_impression:
+                    return ann.colposcopic_impression[0]
+                return ''
+
             # Paint ascending severity so the worst grade wins on overlap.
             painted = sorted(
                 ann.regions,
-                key=lambda r: class_pixel.get(
-                    (r.lesion_label or ann.colposcopic_impression).value
-                    if (r.lesion_label or ann.colposcopic_impression) else '',
-                    0,
-                ),
+                key=lambda r: class_pixel.get(_get_label(r), 0),
             )
             for region in painted:
-                label = region.lesion_label or ann.colposcopic_impression
-                if label is None or label.value not in class_pixel:
+                label_val = _get_label(region)
+                if not label_val or label_val not in class_pixel:
                     continue
                 mask = geo.rasterize_region(region, h, w)
                 if mask is None:
                     continue
-                semantic[mask] = class_pixel[label.value]
+                semantic[mask] = class_pixel[label_val]
 
             zf.writestr(f"masks/{image.id}.png", _png_bytes(PILImage.fromarray(semantic, mode='L')))
             zf.writestr(f"preview/{image.id}.png", _png_bytes(_colorize(semantic, selection)))

@@ -347,7 +347,7 @@ def list_annotated():
         'image_id': img.id,
         'patient_code': img.patient_code,
         'dataset_source': img.dataset_source,
-        'impression': ann.colposcopic_impression.value if ann.colposcopic_impression else None,
+        'impression': ", ".join(ann.colposcopic_impression) if ann.colposcopic_impression else None,
         'region_count': len(ann.regions),
         'annotator': user.full_name or user.username,
         'submitted_at': ann.submitted_at.isoformat() if ann.submitted_at else None,

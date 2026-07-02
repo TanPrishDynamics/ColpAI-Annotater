@@ -59,7 +59,9 @@
         <h2>Overview <span class="muted" id="scopeNote" style="font-weight:400; font-size:13px;"></span></h2>
         <div class="stat-grid-2" id="stats"></div>
         <div style="display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap;">
+            {% if user.role.value != 'reviewer' %}
             <a href="/annotate" class="btn">Start annotating &rarr;</a>
+            {% endif %}
             {% if user.role.value in ['reviewer', 'admin'] %}
                 <a href="/review" class="btn secondary">Open review queue</a>
             {% endif %}
@@ -274,7 +276,8 @@ async function loadRecent() {
         return;
     }
     el.innerHTML = d.items.map(a => {
-        const dx = a.diagnosis?.colposcopic_impression;
+        const dxArray = a.diagnosis?.colposcopic_impression || [];
+        const dx = dxArray.length > 0 ? dxArray.join(', ') : '';
         const color = LABEL_COLOR[dx] || '#7aa3ff';
         return `
             <a href="/annotate/${a.image_id}" style="text-decoration:none; color:inherit;">

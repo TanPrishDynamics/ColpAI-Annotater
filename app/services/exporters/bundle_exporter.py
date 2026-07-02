@@ -42,7 +42,7 @@ def build_bundle_zip(selection: ExportSelection) -> bytes:
                 image.id,
                 image.dataset_source,
                 image.source_path,
-                ann.colposcopic_impression.value if ann.colposcopic_impression else '',
+                ", ".join(ann.colposcopic_impression) if ann.colposcopic_impression else '',
                 len(ann.regions),
                 'yes' if original_ok else 'MISSING',
                 'yes' if overlay_ok else 'no',

@@ -65,7 +65,7 @@ class ImageAnnotation(db.Model):
     surface_contour = db.Column(SAEnum(SurfaceContour, name='surface_contour'), nullable=True)
     atypical_vessels_present = db.Column(db.Boolean, nullable=True)
 
-    colposcopic_impression = db.Column(SAEnum(DiagnosisLabel, name='diagnosis_label'), nullable=True)
+    colposcopic_impression = db.Column(db.JSON, nullable=True)  # list of DiagnosisLabel strings, e.g. ["CIN1", "INFLAMMATION"]
     histopathology_result = db.Column(
         SAEnum(DiagnosisLabel, name='diagnosis_label_histo'),
         nullable=True,
@@ -157,7 +157,7 @@ class ImageAnnotation(db.Model):
                 'atypical_vessels_present': self.atypical_vessels_present,
             },
             'diagnosis': {
-                'colposcopic_impression': self.colposcopic_impression.value if self.colposcopic_impression else None,
+                'colposcopic_impression': self.colposcopic_impression or [],
                 'histopathology_result': self.histopathology_result.value if self.histopathology_result else None,
                 'confidence': self.confidence,
                 'notes': self.notes,

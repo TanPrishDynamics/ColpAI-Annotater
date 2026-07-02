@@ -64,7 +64,7 @@ class ScoringBlock(BaseModel):
 
 
 class DiagnosisBlock(BaseModel):
-    colposcopic_impression: DiagnosisLabel | None = None
+    colposcopic_impression: list[DiagnosisLabel] | None = None
     histopathology_result: DiagnosisLabel | None = None
     confidence: int | None = Field(default=None, ge=1, le=5)
     notes: str | None = Field(default=None, max_length=4000)
@@ -108,9 +108,9 @@ class AnnotationSubmit(BaseModel):
     @model_validator(mode='after')
     def _diagnosis_required(self):
         d = self.diagnosis
-        if d is None or d.colposcopic_impression is None or d.confidence is None:
+        if d is None or not d.colposcopic_impression or d.confidence is None:
             raise ValueError(
-                'diagnosis.colposcopic_impression and diagnosis.confidence are required to submit.'
+                'At least one diagnosis.colposcopic_impression and diagnosis.confidence are required to submit.'
             )
         return self
 

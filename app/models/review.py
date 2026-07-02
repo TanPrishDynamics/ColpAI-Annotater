@@ -40,7 +40,7 @@ class ConsensusLabel(db.Model):
 
     id = db.Column(db.String(36), primary_key=True, default=_uuid)
     image_id = db.Column(db.String(36), db.ForeignKey('images.id'), nullable=False, unique=True)
-    label = db.Column(SAEnum(DiagnosisLabel, name='consensus_label'), nullable=False)
+    label = db.Column(db.JSON, nullable=False)  # list of DiagnosisLabel strings
     derived_from = db.Column(db.JSON, nullable=False)
     agreement_score = db.Column(db.Float, nullable=True)
     computed_at = db.Column(db.DateTime(timezone=True), default=_utcnow, nullable=False)

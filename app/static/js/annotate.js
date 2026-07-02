@@ -133,6 +133,18 @@
         return base;
     }
 
+    function showHUD(text) {
+        const hud = document.getElementById('hudOverlay');
+        if (!hud) return;
+        hud.textContent = text;
+        hud.style.opacity = '1';
+        hud.style.transform = 'translate(-50%, -50%) scale(1.1)';
+        setTimeout(() => {
+            hud.style.opacity = '0';
+            hud.style.transform = 'translate(-50%, -50%) scale(1)';
+        }, 1000);
+    }
+
     // ---------- Konva stage ----------
     function initStage() {
         if (state.stage) state.stage.destroy();
@@ -140,7 +152,7 @@
             container: 'stage',
             width: stageEl.clientWidth,
             height: stageEl.clientHeight,
-            draggable: false,
+            draggable: state.tool === 'pan',
         });
         state.imageLayer = new Konva.Layer({listening: false});
         state.regionLayer = new Konva.Layer();
@@ -206,47 +218,37 @@
             state.stage.batchDraw();
         });
 
-        // Space+drag pan.
-        let panning = false;
-        let lastPointer = null;
+        // Space+drag pan (and native pan tool)
+        let spacePressed = false;
         window.addEventListener('keydown', (e) => {
-            if (e.code === 'Space' && !e.target.matches('input, textarea, select')) {
-                panning = true;
+            if (e.code === 'Space' && !e.target.matches('input, textarea, select') && !spacePressed) {
+                spacePressed = true;
+                state.stage.draggable(true);
                 stageWrap.style.cursor = 'grab';
                 e.preventDefault();
             }
         });
         window.addEventListener('keyup', (e) => {
             if (e.code === 'Space') {
-                panning = false;
-                stageWrap.style.cursor = '';
-                lastPointer = null;
+                spacePressed = false;
+                state.stage.draggable(state.tool === 'pan');
+                stageWrap.style.cursor = state.tool === 'pan' ? '' : 'crosshair';
             }
         });
-        state.stage.on('mousedown', (e) => {
-            if (panning) {
-                lastPointer = state.stage.getPointerPosition();
-                stageWrap.style.cursor = 'grabbing';
+        
+        state.stage.on('dragstart', (e) => {
+            if (e.target === state.stage) stageWrap.style.cursor = 'grabbing';
+        });
+        state.stage.on('dragend', (e) => {
+            if (e.target === state.stage) {
+                stageWrap.style.cursor = spacePressed ? 'grab' : (state.tool === 'pan' ? '' : 'crosshair');
             }
-        });
-        state.stage.on('mousemove', () => {
-            if (!panning || !lastPointer) return;
-            const cur = state.stage.getPointerPosition();
-            state.stage.position({
-                x: state.stage.x() + (cur.x - lastPointer.x),
-                y: state.stage.y() + (cur.y - lastPointer.y),
-            });
-            lastPointer = cur;
-            state.stage.batchDraw();
-        });
-        state.stage.on('mouseup', () => {
-            if (panning) stageWrap.style.cursor = 'grab';
-            lastPointer = null;
         });
 
         // Click empty stage in pan tool -> deselect.
         state.stage.on('click tap', (e) => {
-            if (state.tool === 'pan' && e.target === state.stage) {
+            const isBg = e.target === state.stage || (state.imageLayer && e.target === state.imageLayer.findOne('Image'));
+            if (state.tool === 'pan' && isBg) {
                 selectRegion(null);
             }
         });
@@ -255,7 +257,7 @@
         let bboxStart = null;
         let bboxRect = null;
         state.stage.on('mousedown.bboxtool', (e) => {
-            if (state.tool !== 'bbox' || panning) return;
+            if (state.tool !== 'bbox' || spacePressed) return;
             const p = imagePointer();
             if (!p) return;
             bboxStart = p;
@@ -296,7 +298,7 @@
 
         // Polygon tool: click to add vertex, double-click last to close.
         state.stage.on('click.polygontool', (e) => {
-            if (state.tool !== 'polygon' || panning) return;
+            if (state.tool !== 'polygon' || spacePressed) return;
             const p = imagePointer();
             if (!p) return;
             if (!state.polygonDraft) {
@@ -341,7 +343,7 @@
         let masking = false;
         let lastMaskPt = null;
         state.stage.on('mousedown.masktool', (e) => {
-            if (state.tool !== 'mask' || panning) return;
+            if (state.tool !== 'mask' || spacePressed) return;
             const p = imagePointer();
             if (!p) return;
             if (state.annotation && state.annotation.status && state.annotation.status !== 'draft') return;
@@ -373,7 +375,7 @@
         let cropStart = null;
         let cropDraft = null;
         state.stage.on('mousedown.croptool', (e) => {
-            if (state.tool !== 'crop' || panning) return;
+            if (state.tool !== 'crop' || spacePressed) return;
             if (state.annotation && state.annotation.status && state.annotation.status !== 'draft') return;
             const p = imagePointer();
             if (!p) return;
@@ -674,6 +676,7 @@
     // ---------- Tool selection ----------
     function setTool(name) {
         state.tool = name;
+        state.stage.draggable(name === 'pan');
         document.querySelectorAll('#toolDock button[data-tool]').forEach(b => {
             b.setAttribute('aria-pressed', b.dataset.tool === name ? 'true' : 'false');
         });
@@ -779,6 +782,58 @@
             node.width(g.w); node.height(g.h);
             await patchRegion(region.id, {geometry: g});
         });
+
+        // Hover Tooltip
+        node.on('mouseenter', (e) => {
+            if (state.tool !== 'pan') return;
+            document.body.style.cursor = 'pointer';
+            const label = region.lesion_label || 'Unlabeled';
+            const size = region.lesion_size_percent ? ` - ${region.lesion_size_percent}%` : '';
+            const tooltip = document.getElementById('hoverTooltip');
+            if (tooltip) {
+                tooltip.textContent = `${label}${size}`;
+                tooltip.style.display = 'block';
+                const pos = state.stage.getPointerPosition();
+                if (pos) {
+                    tooltip.style.left = pos.x + 'px';
+                    tooltip.style.top = pos.y + 'px';
+                }
+            }
+        });
+        node.on('mousemove', (e) => {
+            if (state.tool !== 'pan') return;
+            const tooltip = document.getElementById('hoverTooltip');
+            if (tooltip && tooltip.style.display === 'block') {
+                const pos = state.stage.getPointerPosition();
+                if (pos) {
+                    tooltip.style.left = pos.x + 'px';
+                    tooltip.style.top = pos.y + 'px';
+                }
+            }
+        });
+        node.on('mouseleave', () => {
+            document.body.style.cursor = 'default';
+            const tooltip = document.getElementById('hoverTooltip');
+            if (tooltip) tooltip.style.display = 'none';
+        });
+
+        // Context menu
+        node.on('contextmenu', (e) => {
+            e.evt.preventDefault();
+            if (state.tool !== 'pan') return;
+            selectRegion(region.id);
+            const menu = document.getElementById('contextMenu');
+            if (menu) {
+                menu.style.display = 'block';
+                const pos = state.stage.getPointerPosition();
+                if (pos) {
+                    menu.style.left = pos.x + 'px';
+                    menu.style.top = pos.y + 'px';
+                }
+                menu.dataset.targetId = region.id;
+            }
+        });
+
         state.regionLayer.add(node);
         state.nodes.set(region.id, node);
     }
@@ -866,12 +921,19 @@
 
     function renderRegionEditor() {
         const editor = document.getElementById('regionEditor');
+        if (!editor) return;
         const region = state.regions.get(state.selectedRegionId);
         if (!region) {
             editor.style.display = 'none';
             return;
         }
-        editor.style.display = '';
+        editor.style.display = 'block';
+        
+        // Position it strictly in the center
+        editor.style.left = '50%';
+        editor.style.top = '50%';
+        editor.style.transform = 'translate(-50%, -50%)';
+
         editor.querySelectorAll('[data-rfield]').forEach(el => {
             const key = el.dataset.rfield;
             const val = region[key];
@@ -900,9 +962,15 @@
         setPill('Saving region...', 'saving');
         try {
             await ensureAnnotation();
+            const selectedDx = Array.from(document.querySelectorAll('.dx-btn[aria-pressed="true"]')).map(b => b.dataset.dx);
+            let lesion_label = undefined;
+            const abnormalLabels = selectedDx.filter(d => ['CIN1', 'CIN2', 'CIN3', 'AIS', 'INVASIVE_CANCER'].includes(d));
+            if (abnormalLabels.length > 0) {
+                lesion_label = abnormalLabels[0];
+            }
             const created = await api(`/api/v1/annotations/${state.annotation.id}/regions`, {
                 method: 'POST',
-                body: JSON.stringify({region_type, geometry}),
+                body: JSON.stringify({region_type, geometry, lesion_label}),
             });
             state.regions.set(created.id, created);
             drawRegion(created);
@@ -1170,8 +1238,9 @@
     // ---------- Form (Layer B) ----------
     function renderForm() {
         const ann = state.annotation;
+        const impression = ann?.diagnosis?.colposcopic_impression || [];
         document.querySelectorAll('.dx-btn').forEach(btn => {
-            const picked = ann?.diagnosis?.colposcopic_impression === btn.dataset.dx;
+            const picked = impression.includes(btn.dataset.dx);
             btn.setAttribute('aria-pressed', picked ? 'true' : 'false');
         });
         const confVal = ann?.diagnosis?.confidence ?? 3;
@@ -1270,6 +1339,9 @@
             });
             state.dirty = false;
             setPill('Saved', 'saved');
+            if (Object.keys(body).length && !body.diagnosis) {
+                showHUD('Saved ✓');
+            }
         } catch (err) {
             state.savePending = deepMerge(body, state.savePending || {});
             setPill('Error - retry', 'error');
@@ -1281,11 +1353,33 @@
     // doesn't fail submit just because the user never touched the slider.
     document.querySelectorAll('.dx-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            const dx = btn.dataset.dx;
-            document.querySelectorAll('.dx-btn').forEach(b => b.setAttribute('aria-pressed', 'false'));
-            btn.setAttribute('aria-pressed', 'true');
+            const isPressed = btn.getAttribute('aria-pressed') === 'true';
+            btn.setAttribute('aria-pressed', !isPressed ? 'true' : 'false');
+            
+            const selectedDx = Array.from(document.querySelectorAll('.dx-btn[aria-pressed="true"]')).map(b => b.dataset.dx);
             const confidence = Number(document.getElementById('confidence').value);
-            queueAutosave({diagnosis: {colposcopic_impression: dx, confidence}});
+            queueAutosave({diagnosis: {colposcopic_impression: selectedDx, confidence}});
+
+            // Smart Tool Switching
+            const hasAbnormal = selectedDx.some(d => ['CIN1', 'CIN2', 'CIN3', 'AIS', 'INVASIVE_CANCER'].includes(d));
+            if (hasAbnormal && state.tool === 'pan') {
+                const polyBtn = document.querySelector('#toolDock button[data-tool="polygon"]');
+                if (polyBtn) polyBtn.click();
+            }
+
+            // Dynamic UI
+            const isOnlyNormal = selectedDx.length === 1 && selectedDx[0] === 'NORMAL';
+            const regionsDetails = document.querySelector('#regionList').closest('details');
+            if (regionsDetails) {
+                if (hasAbnormal) regionsDetails.setAttribute('open', '');
+                else if (isOnlyNormal || selectedDx.length === 0) regionsDetails.removeAttribute('open');
+            }
+            const scoringTabBtn = document.querySelector('.tab-btn[onclick*="tab-scoring"]');
+            if (scoringTabBtn) {
+                scoringTabBtn.style.display = (selectedDx.length > 0 && !isOnlyNormal) ? '' : 'none';
+            }
+            
+            showHUD(selectedDx.join(', ') || 'None');
         });
     });
     document.querySelectorAll('[data-field]').forEach(el => {
@@ -1301,12 +1395,16 @@
 
     // ---------- Brightness / contrast ----------
     function updateFilter() {
-        const b = document.getElementById('brightness').value;
-        const c = document.getElementById('contrast').value;
-        stageWrap.style.setProperty('--img-filter', `brightness(${b}%) contrast(${c}%)`);
+        const b = document.getElementById('brightness');
+        const c = document.getElementById('contrast');
+        if (b && c) {
+            stageWrap.style.setProperty('--img-filter', `brightness(${b.value}%) contrast(${c.value}%)`);
+        }
     }
-    document.getElementById('brightness').addEventListener('input', updateFilter);
-    document.getElementById('contrast').addEventListener('input', updateFilter);
+    const bInput = document.getElementById('brightness');
+    const cInput = document.getElementById('contrast');
+    if (bInput) bInput.addEventListener('input', updateFilter);
+    if (cInput) cInput.addEventListener('input', updateFilter);
     document.getElementById('resetView').addEventListener('click', fitImage);
 
     // ---------- Mask brush controls ----------
@@ -1388,6 +1486,20 @@
         }
     }
 
+    const normalNextBtn = document.getElementById('normalNextBtn');
+    if (normalNextBtn) {
+        normalNextBtn.addEventListener('click', async () => {
+            const normBtn = document.querySelector('.dx-btn[data-dx="NORMAL"]');
+            if (normBtn) {
+                document.querySelectorAll('.dx-btn').forEach(b => b.setAttribute('aria-pressed', 'false'));
+                normBtn.setAttribute('aria-pressed', 'true');
+            }
+            document.getElementById('confidence').value = 3;
+            queueAutosave({diagnosis: {colposcopic_impression: ['NORMAL'], confidence: 3}});
+            await submit();
+        });
+    }
+
     // ---------- Tool dock ----------
     document.querySelectorAll('#toolDock button[data-tool]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1398,8 +1510,57 @@
 
     // ---------- Shortcut overlay ----------
     const overlay = document.getElementById('shortcutOverlay');
-    document.getElementById('shortcutsBtn').addEventListener('click', () => {
-        overlay.dataset.open = overlay.dataset.open === 'true' ? 'false' : 'true';
+    if (overlay) {
+        document.getElementById('shortcutsBtn').addEventListener('click', () => {
+            overlay.dataset.open = 'true';
+        });
+    }
+
+    // Hide context menu when clicking outside
+    if (state.stage) {
+        state.stage.on('click', (e) => {
+            const menu = document.getElementById('contextMenu');
+            if (menu && e.target === state.imageLayer.findOne('Image')) {
+                menu.style.display = 'none';
+            }
+        });
+    }
+    // Bind context menu actions
+    document.querySelectorAll('.ctx-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const menu = document.getElementById('contextMenu');
+            if (!menu) return;
+            menu.style.display = 'none';
+            const rid = menu.dataset.targetId;
+            if (!rid) return;
+            const action = btn.dataset.action;
+            if (action === 'delete') {
+                await deleteRegion(rid);
+            } else if (action === 'label') {
+                const val = btn.dataset.val;
+                await patchRegion(rid, {lesion_label: val});
+            }
+        });
+    });
+
+    // Close menus on general canvas click/drag
+    stageEl.addEventListener('mousedown', () => {
+        const menu = document.getElementById('contextMenu');
+        if (menu) menu.style.display = 'none';
+    });
+
+    // Close region editor when clicking outside of it
+    document.addEventListener('mousedown', (e) => {
+        const editor = document.getElementById('regionEditor');
+        if (editor && editor.style.display === 'block') {
+            if (editor.contains(e.target)) return;
+            const menu = document.getElementById('contextMenu');
+            if (menu && menu.contains(e.target)) return;
+            if (e.target.closest('.region-row')) return;
+            if (stageEl.contains(e.target)) return;
+            
+            selectRegion(null);
+        }
     });
 
     // ---------- Keyboard ----------
@@ -1422,6 +1583,7 @@
             e.preventDefault();
             if (state.saveTimer) { clearTimeout(state.saveTimer); state.saveTimer = null; }
             flushSave();
+            showHUD('Saved ✓');
             return;
         }
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {

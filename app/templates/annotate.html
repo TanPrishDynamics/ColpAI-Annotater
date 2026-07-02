@@ -10,6 +10,13 @@
         max-width: none;
         padding: 0;
         margin: 0;
+        transition: grid-template-columns 0.3s ease;
+    }
+    .annotate-shell.zen-mode {
+        grid-template-columns: minmax(0, 1fr) 0px;
+    }
+    .annotate-shell.zen-mode .side {
+        display: none;
     }
     .annotate-shell > header {
         grid-column: 1 / -1;
@@ -53,6 +60,7 @@
         top: 16px;
         left: 16px;
         display: flex;
+        flex-direction: column;
         gap: 6px;
         background: rgba(255, 255, 255, 0.9);
         border: 1px solid var(--border-strong);
@@ -63,24 +71,74 @@
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
     .tool-dock button {
-        background: var(--surface-2);
+        background: transparent;
         color: var(--fg);
-        border: 1px solid transparent;
-        padding: 8px 12px;
-        font-size: 12px;
-        min-width: 38px;
+        border: none;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        padding: 0;
     }
+    .tool-dock button svg {
+        width: 20px;
+        height: 20px;
+        fill: currentColor;
+    }
+    .tool-dock button:hover { background: var(--surface); color: var(--accent); }
     .tool-dock button[aria-pressed="true"] {
-        background: var(--accent);
-        color: white;
-        border-color: var(--accent);
+        background: var(--surface-2);
+        color: var(--accent);
     }
     .tool-dock .sep {
-        width: 1px;
-        background: var(--border);
-        margin: 4px 2px;
+        width: 24px;
+        height: 1px;
+        background: var(--border-strong);
+        margin: 2px auto;
     }
 
+    .metadata-overlay {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        z-index: 5;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 8px;
+    }
+    .icon-btn {
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid var(--border-strong);
+        border-radius: 50%;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        padding: 0;
+        backdrop-filter: blur(4px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        color: var(--fg);
+        transition: all 0.2s ease;
+    }
+    .icon-btn svg { width: 20px; height: 20px; fill: currentColor; }
+    .icon-btn:hover { background: var(--surface); color: var(--accent); }
+    .metadata-panel {
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid var(--border-strong);
+        border-radius: 10px;
+        padding: 12px;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        min-width: 200px;
+        text-align: left;
+    }
     .viewer-controls {
         position: absolute;
         bottom: 16px;
@@ -90,8 +148,8 @@
         border: 1px solid var(--border-strong);
         border-radius: 10px;
         padding: 10px 14px;
-        display: grid;
-        grid-template-columns: auto 1fr auto 1fr auto;
+        display: flex;
+        flex-wrap: wrap;
         gap: 10px 14px;
         align-items: center;
         font-size: 12px;
@@ -99,8 +157,35 @@
         backdrop-filter: blur(4px);
         z-index: 5;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        transition: all 0.25s ease;
     }
-    .viewer-controls input[type="range"] { width: 100%; padding: 0; }
+    .viewer-controls.collapsed {
+        left: auto;
+        right: 16px;
+        padding: 6px 10px;
+        gap: 6px;
+    }
+    .viewer-controls.collapsed .vc-sliders {
+        display: none;
+    }
+    .viewer-controls .vc-sliders {
+        display: contents;
+    }
+    .viewer-controls input[type="range"] { width: 100px; padding: 0; flex-shrink: 1; min-width: 60px; }
+    .vc-toggle {
+        background: transparent;
+        border: none;
+        color: var(--fg-muted);
+        cursor: pointer;
+        padding: 2px 6px;
+        min-height: 28px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        transition: color 0.2s;
+    }
+    .vc-toggle:hover { color: var(--accent); background: transparent; }
+    .vc-toggle svg { width: 16px; height: 16px; fill: currentColor; }
 
     .side {
         background: var(--surface);
@@ -182,9 +267,11 @@
     }
     textarea { resize: vertical; min-height: 60px; }
 
+    .dx-category { margin-bottom: 12px; }
+    .dx-category-title { font-size: 11px; text-transform: uppercase; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.5px; }
     .diagnosis-grid {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
         gap: 8px;
     }
     .dx-btn {
@@ -199,7 +286,17 @@
         font-weight: 600;
         transition: all 0.2s ease;
     }
-    .dx-btn[aria-pressed="true"] { background: var(--accent); color: white; border-color: var(--accent); }
+    .dx-btn[aria-pressed="true"] {
+        background: var(--accent);
+        color: white;
+        border-color: var(--accent);
+    }
+    .dx-btn[aria-pressed="true"]::after {
+        content: '✓';
+        margin-left: 6px;
+        font-weight: bold;
+    }
+    .dx-btn:active { transform: scale(0.97); }
     .dx-btn[data-dx="NORMAL"][aria-pressed="true"] { background: #10B981; border-color: #10B981; color: white; }
     .dx-btn[data-dx="CIN1"][aria-pressed="true"] { background: #F59E0B; border-color: #F59E0B; color: white; }
     .dx-btn[data-dx="CIN2"][aria-pressed="true"] { background: #EA580C; border-color: #EA580C; color: white; }
@@ -279,6 +376,21 @@
         font-family: 'SF Mono', monospace;
         font-size: 12px;
     }
+    
+    .ctx-btn {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: none;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-size: 13px;
+        cursor: pointer;
+        color: var(--text);
+    }
+    .ctx-btn:hover { background: var(--surface-2); }
+    .ctx-btn.danger:hover { background: #ffebee; }
 </style>
 
 <div class="annotate-shell">
@@ -297,17 +409,31 @@
 
     <div class="stage-wrap" id="stageWrap">
         <div class="tool-dock" id="toolDock">
-            <button data-tool="pan" aria-pressed="true" title="V - Pan / select">Pan</button>
-            <button data-tool="bbox" aria-pressed="false" title="B - Bbox">Bbox</button>
-            <button data-tool="polygon" aria-pressed="false" title="P - Polygon">Polygon</button>
-            <button data-tool="mask" aria-pressed="false" title="M - Mask brush">Mask</button>
-            <button data-tool="crop" aria-pressed="false" title="C - Crop region">Crop</button>
+            <button data-tool="pan" aria-pressed="true" title="V - Pan / select">
+                <svg viewBox="0 0 24 24"><path d="M20 10v-3a1 1 0 0 0-2 0v2h-1V5a1 1 0 0 0-2 0v4h-1V3a1 1 0 0 0-2 0v6h-1V6a1 1 0 0 0-2 0v9.5l-2.7-2.7a1.5 1.5 0 0 0-2.1 2.1l5.8 5.8a3 3 0 0 0 2.1.9h4.9a5 5 0 0 0 5-5v-6.6a1 1 0 0 0-1-1z"/></svg>
+            </button>
+            <button data-tool="bbox" aria-pressed="false" title="B - Bounding Box">
+                <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zm2 2v12h12V6z"/></svg>
+            </button>
+            <button data-tool="polygon" aria-pressed="false" title="P - Polygon">
+                <svg viewBox="0 0 24 24"><path d="M12 2l8.5 6.2-3.2 10H6.7L3.5 8.2 12 2zm0 2.5l-6.3 4.6 2.4 7.4h7.8l2.4-7.4L12 4.5z"/></svg>
+            </button>
+            <button data-tool="mask" aria-pressed="false" title="M - Mask brush">
+                <svg viewBox="0 0 24 24"><path d="M20.7 5.3a3.5 3.5 0 0 0-5 0L6 15l-3 6 6-3 9.7-9.7a3.5 3.5 0 0 0 0-5zM12 16.5l-4.5-4.5 7.5-7.5 4.5 4.5-7.5 7.5z"/></svg>
+            </button>
+            <button data-tool="crop" aria-pressed="false" title="C - Crop region">
+                <svg viewBox="0 0 24 24"><path d="M19 17h3v2h-3v3h-2v-3H6a2 2 0 0 1-2-2V6H1V4h3V1h2v3h11v2H6v11h11V6h2v11z"/></svg>
+            </button>
             <span class="sep"></span>
-            <button id="undoBtn" title="Ctrl+Z - Undo">Undo</button>
-            <button id="redoBtn" title="Ctrl+Shift+Z - Redo">Redo</button>
+            <button id="undoBtn" title="Ctrl+Z - Undo">
+                <svg viewBox="0 0 24 24"><path d="M12.5 8c-2.6 0-5 1-6.9 2.8L2 7v9h9l-3.6-3.6A8 8 0 0 1 20 16l2.4-.8a10.5 10.5 0 0 0-10-7.2z"/></svg>
+            </button>
+            <button id="redoBtn" title="Ctrl+Shift+Z - Redo">
+                <svg viewBox="0 0 24 24"><path d="M18.4 10.8A10.5 10.5 0 0 0 11.5 8c-2.6 0-5 1-6.9 2.8L1 11.6V7h2l3.6 3.6A8 8 0 0 1 11.5 10c3.1 0 6 1.8 7.3 4.6l2.4-.8L18.4 10.8zM22 7v9h-9l3.6-3.6L18 10.8V7h4z"/></svg>
+            </button>
         </div>
         <div class="brush-dock" id="brushDock" data-show="false"
-             style="position:absolute; top:64px; left:16px; z-index:5; display:none; gap:8px;
+             style="position:absolute; top:16px; left:70px; z-index:5; display:none; gap:8px;
                     align-items:center; background:rgba(255,255,255,0.9); padding:6px 10px;
                     border:1px solid var(--border-strong); border-radius:8px; font-size:12px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
             <label for="brushSize" style="color:var(--fg-muted);">Brush</label>
@@ -319,7 +445,7 @@
                     title="Clear this mask" style="padding:4px 10px; min-height:32px;">Clear</button>
         </div>
         <div class="crop-dock" id="cropDock" data-show="false"
-             style="position:absolute; top:64px; left:16px; z-index:5; display:none; gap:8px;
+             style="position:absolute; top:16px; left:70px; z-index:5; display:none; gap:8px;
                     align-items:center; background:rgba(255,255,255,0.9); padding:6px 10px;
                     border:1px solid var(--border-strong); border-radius:8px; font-size:12px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
             <span style="color:var(--fg-muted);">Drag to set the crop region.</span>
@@ -330,13 +456,112 @@
                     title="Remove crop region" style="padding:4px 10px; min-height:32px;">Clear</button>
         </div>
         <div id="stage"></div>
+        <div class="metadata-overlay">
+            <button class="icon-btn" id="infoBtn" title="Image Metadata">
+                <svg viewBox="0 0 24 24"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
+            </button>
+            <div class="metadata-panel" id="metadataPanel" style="display:none;">
+                <div class="muted" id="meta" style="font-size: 12px; line-height: 1.7;">Loading...</div>
+            </div>
+        </div>
         <div class="viewer-empty" id="viewerEmpty" data-show="true">No image loaded.</div>
-        <div class="viewer-controls">
-            <label for="brightness">Brightness</label>
-            <input type="range" id="brightness" min="50" max="200" value="100">
-            <label for="contrast">Contrast</label>
-            <input type="range" id="contrast" min="50" max="200" value="100">
+        <div class="viewer-controls" id="viewerControls">
+            <button class="vc-toggle" id="vcToggle" title="Toggle controls panel">
+                <svg viewBox="0 0 24 24"><path d="M12 8l-6 6h12z"/></svg>
+            </button>
+            <div class="vc-sliders">
+                <label for="brightness">Brightness</label>
+                <input type="range" id="brightness" min="50" max="200" value="100">
+                <label for="contrast">Contrast</label>
+                <input type="range" id="contrast" min="50" max="200" value="100">
+            </div>
             <button class="secondary" id="resetView" style="padding: 4px 10px;">Reset view</button>
+            <button class="secondary" id="zenToggle" style="padding: 4px 10px; display: flex; align-items: center; gap: 4px;" title="Toggle Focus Mode">
+                <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor;"><path d="M4 4h16v16H4V4zm2 2v12h12V6H6zm13-6h2v4h-2V0zM3 24H1v-4h2v4zM23 24h-2v-4h2v4zM3 0H1v4h2V0z"/></svg> Focus
+            </button>
+        </div>
+
+        <!-- Floating UI Elements -->
+        <div id="hudOverlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; opacity: 0; transition: opacity 0.3s, transform 0.3s; background: rgba(0,0,0,0.6); color: white; padding: 16px 32px; border-radius: 32px; font-size: 24px; font-weight: bold; backdrop-filter: blur(8px); z-index: 100;"></div>
+        
+        <div id="hoverTooltip" style="position: absolute; display: none; pointer-events: none; background: rgba(0,0,0,0.8); color: white; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; z-index: 90; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transform: translate(-50%, -100%); margin-top: -10px;"></div>
+
+        <div id="contextMenu" style="position: absolute; display: none; background: rgba(255,255,255,0.95); backdrop-filter: blur(8px); border: 1px solid var(--border-strong); border-radius: 8px; padding: 4px; box-shadow: 0 8px 16px rgba(0,0,0,0.15); z-index: 95; width: 140px; font-size: 13px;">
+            <div style="padding: 6px 12px; color: var(--fg-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Label</div>
+            <button class="ctx-btn" data-action="label" data-val="NORMAL">Normal</button>
+            <button class="ctx-btn" data-action="label" data-val="CIN1">CIN1</button>
+            <button class="ctx-btn" data-action="label" data-val="CIN2">CIN2</button>
+            <button class="ctx-btn" data-action="label" data-val="CIN3">CIN3</button>
+            <button class="ctx-btn" data-action="label" data-val="AIS">AIS</button>
+            <button class="ctx-btn" data-action="label" data-val="INVASIVE_CANCER">INVASIVE</button>
+            <button class="ctx-btn" data-action="label" data-val="INFLAMMATION">INFLAMMATION</button>
+            <button class="ctx-btn" data-action="label" data-val="INFECTION">INFECTION</button>
+            <button class="ctx-btn" data-action="label" data-val="EROSION">EROSION</button>
+            <div style="height: 1px; background: var(--border); margin: 4px 0;"></div>
+            <button class="ctx-btn danger" data-action="delete" style="color: var(--danger);">Delete Region</button>
+        </div>
+
+        <div id="regionEditor" style="position: absolute; display: none; background: rgba(255,255,255,0.95); backdrop-filter: blur(12px); border: 1px solid var(--border-strong); border-radius: 12px; padding: 16px; box-shadow: 0 12px 24px rgba(0,0,0,0.2); z-index: 85; width: 280px; transform: translate(-50%, 20px);">
+            <div class="row">
+                <div>
+                    <label>Lesion label</label>
+                    <select data-rfield="lesion_label">
+                        <option value="">-</option>
+                        <option value="NORMAL">NORMAL</option>
+                        <option value="CIN1">CIN1</option>
+                        <option value="CIN2">CIN2</option>
+                        <option value="CIN3">CIN3</option>
+                        <option value="AIS">AIS</option>
+                        <option value="INVASIVE_CANCER">INVASIVE_CANCER</option>
+                        <option value="INFLAMMATION">INFLAMMATION</option>
+                        <option value="INFECTION">INFECTION</option>
+                        <option value="EROSION">EROSION</option>
+                    </select>
+                </div>
+                <div class="row-2">
+                    <div>
+                        <label>Clock (1-12)</label>
+                        <input type="number" min="1" max="12" data-rfield="lesion_location_clock">
+                    </div>
+                    <div>
+                        <label>Size %</label>
+                        <input type="number" min="0" max="100" data-rfield="lesion_size_percent">
+                    </div>
+                </div>
+                <div class="row-2">
+                    <div>
+                        <label>Quadrant</label>
+                        <select data-rfield="lesion_quadrant">
+                            <option value="">-</option>
+                            <option value="anterior">Anterior</option>
+                            <option value="posterior">Posterior</option>
+                            <option value="left_lateral">Left lateral</option>
+                            <option value="right_lateral">Right lateral</option>
+                            <option value="circumferential">Circumferential</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Margins</label>
+                        <select data-rfield="lesion_margins">
+                            <option value="">-</option>
+                            <option value="sharp">Sharp</option>
+                            <option value="irregular">Irregular</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row-2">
+                    <label class="check"><input type="checkbox" data-rfield="punctation_present"> Punctation</label>
+                    <input type="number" min="1" max="3" placeholder="severity" data-rfield="punctation_severity">
+                </div>
+                <div class="row-2">
+                    <label class="check"><input type="checkbox" data-rfield="mosaic_present"> Mosaic</label>
+                    <input type="number" min="1" max="3" placeholder="severity" data-rfield="mosaic_severity">
+                </div>
+                <div>
+                    <label>Notes</label>
+                    <textarea data-rfield="region_notes" placeholder="Per-region observations..." rows="1"></textarea>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -348,29 +573,36 @@
         </div>
 
         <div class="tab-content active" id="tab-diagnose">
-        <div class="group">
-            <details open>
-                <summary>Image metadata</summary>
-                <div class="group-body">
-                    <div class="muted" id="meta" style="font-size: 12px; line-height: 1.7;">Loading...</div>
-                </div>
-            </details>
-        </div>
 
         <div class="group">
             <details open>
-                <summary>Diagnosis <span class="muted" style="text-transform: none; letter-spacing: 0;">required</span></summary>
+                <summary>Diagnosis <span class="muted" style="text-transform: none; letter-spacing: 0;">(select all that apply)</span></summary>
                 <div class="group-body row">
-                    <div class="diagnosis-grid" id="dxGrid">
-                        <button type="button" class="dx-btn" data-dx="NORMAL">NORMAL</button>
-                        <button type="button" class="dx-btn" data-dx="CIN1">CIN1</button>
-                        <button type="button" class="dx-btn" data-dx="CIN2">CIN2</button>
-                        <button type="button" class="dx-btn" data-dx="CIN3">CIN3</button>
-                        <button type="button" class="dx-btn" data-dx="AIS">AIS</button>
-                        <button type="button" class="dx-btn" data-dx="INVASIVE_CANCER">INVASIVE</button>
-                        <button type="button" class="dx-btn" data-dx="INFLAMMATION">INFLAMMATION</button>
-                        <button type="button" class="dx-btn" data-dx="INFECTION">INFECTION</button>
-                        <button type="button" class="dx-btn" data-dx="EROSION">EROSION</button>
+                    <div id="dxGrid">
+                        <div class="dx-category">
+                            <div class="dx-category-title muted">Benign</div>
+                            <div class="diagnosis-grid">
+                                <button type="button" class="dx-btn" data-dx="NORMAL">NORMAL</button>
+                                <button type="button" class="dx-btn" data-dx="INFLAMMATION">INFLAMMATION</button>
+                                <button type="button" class="dx-btn" data-dx="INFECTION">INFECTION</button>
+                                <button type="button" class="dx-btn" data-dx="EROSION">EROSION</button>
+                            </div>
+                        </div>
+                        <div class="dx-category">
+                            <div class="dx-category-title muted">Pre-cancerous</div>
+                            <div class="diagnosis-grid">
+                                <button type="button" class="dx-btn" data-dx="CIN1">CIN1</button>
+                                <button type="button" class="dx-btn" data-dx="CIN2">CIN2</button>
+                                <button type="button" class="dx-btn" data-dx="CIN3">CIN3</button>
+                            </div>
+                        </div>
+                        <div class="dx-category">
+                            <div class="dx-category-title muted">Cancer</div>
+                            <div class="diagnosis-grid">
+                                <button type="button" class="dx-btn" data-dx="AIS">AIS</button>
+                                <button type="button" class="dx-btn" data-dx="INVASIVE_CANCER">INVASIVE</button>
+                            </div>
+                        </div>
                     </div>
                     <div>
                         <div class="label-row"><label>Confidence</label><span class="muted" id="confidenceLabel">-</span></div>
@@ -404,66 +636,6 @@
                 <summary>Regions <span class="muted" style="text-transform: none; letter-spacing: 0;" id="regionCount">(0)</span></summary>
                 <div class="group-body">
                     <div class="region-list" id="regionList">
-                        <div class="empty-list">No regions yet. Pick the Bbox or Polygon tool to draw.</div>
-                    </div>
-                    <div id="regionEditor" style="margin-top: 14px; display: none;">
-                        <div class="row">
-                            <div>
-                                <label>Lesion label</label>
-                                <select data-rfield="lesion_label">
-                                    <option value="">-</option>
-                                    <option value="NORMAL">NORMAL</option>
-                                    <option value="CIN1">CIN1</option>
-                                    <option value="CIN2">CIN2</option>
-                                    <option value="CIN3">CIN3</option>
-                                    <option value="AIS">AIS</option>
-                                    <option value="INVASIVE_CANCER">INVASIVE_CANCER</option>
-                                </select>
-                            </div>
-                            <div class="row-2">
-                                <div>
-                                    <label>Clock (1-12)</label>
-                                    <input type="number" min="1" max="12" data-rfield="lesion_location_clock">
-                                </div>
-                                <div>
-                                    <label>Size %</label>
-                                    <input type="number" min="0" max="100" data-rfield="lesion_size_percent">
-                                </div>
-                            </div>
-                            <div class="row-2">
-                                <div>
-                                    <label>Quadrant</label>
-                                    <select data-rfield="lesion_quadrant">
-                                        <option value="">-</option>
-                                        <option value="anterior">Anterior</option>
-                                        <option value="posterior">Posterior</option>
-                                        <option value="left_lateral">Left lateral</option>
-                                        <option value="right_lateral">Right lateral</option>
-                                        <option value="circumferential">Circumferential</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label>Margins</label>
-                                    <select data-rfield="lesion_margins">
-                                        <option value="">-</option>
-                                        <option value="sharp">Sharp</option>
-                                        <option value="irregular">Irregular</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="row-2">
-                                <label class="check"><input type="checkbox" data-rfield="punctation_present"> Punctation</label>
-                                <input type="number" min="1" max="3" placeholder="severity" data-rfield="punctation_severity">
-                            </div>
-                            <div class="row-2">
-                                <label class="check"><input type="checkbox" data-rfield="mosaic_present"> Mosaic</label>
-                                <input type="number" min="1" max="3" placeholder="severity" data-rfield="mosaic_severity">
-                            </div>
-                            <div>
-                                <label>Notes</label>
-                                <textarea data-rfield="region_notes" placeholder="Per-region observations..."></textarea>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </details>
@@ -472,6 +644,7 @@
         </div> <!-- End of tab-diagnose -->
 
         <div class="tab-content" id="tab-quality">
+        {% if user.role.value in ['reviewer', 'admin'] %}
         <div class="group">
             <details open>
                 <summary>Quality</summary>
@@ -506,6 +679,7 @@
                 </div>
             </details>
         </div>
+        {% endif %}
 
         <div class="group">
             <details open>
@@ -583,6 +757,7 @@
                                 <option value="pale">Pale</option>
                                 <option value="dense_white">Dense white</option>
                                 <option value="yellow">Yellow</option>
+                                <option value="grey_white">Grey white</option>
                             </select>
                         </div>
                         <div>
@@ -698,6 +873,25 @@
                 content.classList.toggle('active', content.id === tabId);
             });
         }
+
+        document.getElementById('zenToggle').addEventListener('click', function() {
+            document.querySelector('.annotate-shell').classList.toggle('zen-mode');
+            window.dispatchEvent(new Event('resize')); // helps canvas adapt
+        });
+
+        document.getElementById('vcToggle').addEventListener('click', function() {
+            const panel = document.getElementById('viewerControls');
+            const btn = document.getElementById('vcToggle');
+            panel.classList.toggle('collapsed');
+            // Rotate chevron: up = expanded, down = collapsed
+            btn.querySelector('svg').style.transform = panel.classList.contains('collapsed')
+                ? 'rotate(180deg)' : 'rotate(0deg)';
+        });
+
+        document.getElementById('infoBtn').addEventListener('click', function() {
+            const panel = document.getElementById('metadataPanel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        });
     </script>
 
     <div class="footer-bar">
@@ -707,6 +901,7 @@
             <button class="secondary" id="shortcutsBtn" title="?">Shortcuts</button>
         </div>
         <div class="right">
+            <button class="secondary" id="normalNextBtn" style="color:var(--success); border-color:var(--success); font-weight:bold;" title="Mark as Normal, save & next">Normal &amp; Next</button>
             <button class="danger" id="discardBtn">Discard</button>
             <button class="secondary" id="skipBtn">Skip</button>
             <button class="secondary" id="saveBtn" title="Ctrl+S">Save draft</button>

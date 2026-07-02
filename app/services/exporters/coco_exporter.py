@@ -45,15 +45,21 @@ def build_coco(selection: ExportSelection) -> dict:
             'sha256': image.sha256,
             'dataset_source': image.dataset_source,
             'colposcopic_impression': (
-                ann.colposcopic_impression.value if ann.colposcopic_impression else None
+                ", ".join(ann.colposcopic_impression) if ann.colposcopic_impression else None
             ),
         })
 
         for region in ann.regions:
-            label = region.lesion_label or ann.colposcopic_impression
-            if label is None:
+            if region.lesion_label:
+                label_val = region.lesion_label.value
+            elif ann.colposcopic_impression:
+                label_val = ann.colposcopic_impression[0]
+            else:
+                label_val = None
+
+            if label_val is None:
                 continue  # nothing to categorise this region as
-            category_id = cat_id.get(label.value)
+            category_id = cat_id.get(label_val)
             if category_id is None:
                 continue
 

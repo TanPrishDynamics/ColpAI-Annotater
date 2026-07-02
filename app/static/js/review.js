@@ -63,7 +63,8 @@
             return;
         }
         queueList.innerHTML = state.queue.map((a, i) => {
-            const dx = a.diagnosis?.colposcopic_impression || '(no dx)';
+            const dxArray = a.diagnosis?.colposcopic_impression || [];
+            const dx = dxArray.length > 0 ? dxArray.join(', ') : '(no dx)';
             const color = LABEL_COLOR[dx] || '#7aa3ff';
             return `
                 <div class="queue-item" data-idx="${i}" aria-selected="${i === state.index ? 'true' : 'false'}">
@@ -130,7 +131,7 @@
             <div class="group">
                 <h4>Diagnosis</h4>
                 ${kv([
-                    ['Impression', dxBadge(d.colposcopic_impression)],
+                    ['Impression', dxBadge(d.colposcopic_impression ? d.colposcopic_impression.join(', ') : null)],
                     ['Histopath', d.histopathology_result || '<span class="muted">-</span>'],
                     ['Confidence', d.confidence != null ? `${d.confidence}/5` : '-'],
                     ['Notes', d.notes ? escapeHtml(d.notes) : '<span class="muted">-</span>'],

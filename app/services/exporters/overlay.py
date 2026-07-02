@@ -29,10 +29,10 @@ _PALETTE = {
 _DEFAULT = (122, 163, 255)
 
 
-def _color_for(label) -> tuple[int, int, int]:
-    if label is None:
+def _color_for(label_val) -> tuple[int, int, int]:
+    if label_val is None:
         return _DEFAULT
-    return _PALETTE.get(label.value, _DEFAULT)
+    return _PALETTE.get(label_val, _DEFAULT)
 
 
 def render_overlay(image_row, annotation) -> PILImage.Image | None:
@@ -52,9 +52,15 @@ def render_overlay(image_row, annotation) -> PILImage.Image | None:
     font = _load_font()
 
     for region in annotation.regions:
-        label = region.lesion_label or annotation.colposcopic_impression
-        color = _color_for(label)
-        name = label.value if label else 'unlabeled'
+        if region.lesion_label:
+            label_val = region.lesion_label.value
+        elif annotation.colposcopic_impression:
+            label_val = annotation.colposcopic_impression[0]
+        else:
+            label_val = None
+            
+        color = _color_for(label_val)
+        name = label_val if label_val else 'unlabeled'
         _draw_region(draw, overlay, region, color, name, font, w, h)
 
     return PILImage.alpha_composite(base, overlay)
