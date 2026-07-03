@@ -40,4 +40,6 @@ def register_error_handlers(app):
     def _unhandled(err: Exception):
         if app.debug:
             raise err
+        import logging
+        logging.exception('Unhandled exception: %s', err)
         return error_response('internal_error', 'An unexpected error occurred.', status=500)
