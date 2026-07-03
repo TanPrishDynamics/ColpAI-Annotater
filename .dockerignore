@@ -1,0 +1,42 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+venv/
+.venv/
+env/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local env secrets (injected via Cloud Run env vars instead)
+.env
+
+# Local data (DB + uploads live in Supabase in prod)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/uploads/
+
+# Documentation / planning files
+*.md
+PLAN.md
+DEPLOYMENT.md
+INSTALLATION.md
+ANNOTATION_GUIDE.md
+
+# Agents / config
+.agent/
+
+# OS files
+.DS_Store
+Thumbs.db
