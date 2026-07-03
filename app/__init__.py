@@ -74,6 +74,14 @@ def create_app(config_name: str | None = None) -> Flask:
 
     @app.get('/api/v1/health')
     def health():
-        return jsonify({'status': 'ok', 'config': config_name})
+        db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        # Show db type without exposing credentials
+        if 'postgresql' in db_uri:
+            db_type = 'postgresql (supabase)'
+        elif 'sqlite' in db_uri:
+            db_type = 'sqlite (local fallback!)'
+        else:
+            db_type = 'unknown'
+        return jsonify({'status': 'ok', 'config': config_name, 'db': db_type})
 
     return app
