@@ -18,6 +18,13 @@
     .dl-grid select { width: auto; }
     .ann-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
     .ann-card { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-elev, #1a1f29); position: relative; }
+    .ann-actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 10; }
+    .ann-del-btn { position: static !important; }
+    .ann-crop-btn { background: var(--bg-hover); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 11px; cursor: pointer; }
+    .ann-crop-btn:hover { background: var(--border); }
+</style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+<style>
     .ann-del-btn { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.6); color: #ff5b5b; border: 1px solid #ff5b5b; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; display: none; }
     .ann-card:hover .ann-del-btn { display: block; }
     .ann-del-btn:hover { background: #ff5b5b; color: #fff; }
@@ -160,6 +167,21 @@
     </div>
 </main>
 
+<div id="cropModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 9999; flex-direction: column; align-items: center; justify-content: center;">
+    <div style="background: var(--bg-elev, #1a1f29); padding: 20px; border-radius: 8px; width: 90vw; max-width: 800px; display: flex; flex-direction: column; gap: 16px;">
+        <h3 style="margin: 0; color: white;">Crop Image (Destructive)</h3>
+        <p class="muted" style="margin: 0;">This will permanently overwrite the original image and delete any existing annotations.</p>
+        <div style="flex: 1; height: 60vh; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+            <img id="cropTargetImage" style="max-width: 100%; max-height: 100%; display: block;" src="">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 12px;">
+            <button class="secondary" onclick="closeCropModal()">Cancel</button>
+            <button class="danger" id="saveCropBtn" onclick="saveCrop()">Crop & Overwrite</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
 <script>
 async function api(path, opts = {}) {
     const res = await fetch(path, {
@@ -411,7 +433,10 @@ async function loadAnnotated() {
         if (!d.count) { grid.innerHTML = '<span class="muted">No completed annotations yet.</span>'; return; }
         grid.innerHTML = d.items.map(a => `
             <div class="ann-card">
-                <button class="ann-del-btn" onclick="deleteImage('${a.image_id}')" title="Delete image">Delete</button>
+                <div class="ann-actions">
+                    <button class="ann-crop-btn" onclick="openCropModal('${a.image_id}', '${a.image_url}')" title="Crop image">Crop</button>
+                    <button class="ann-del-btn" onclick="deleteImage('${a.image_id}')" title="Delete image">Delete</button>
+                </div>
                 <a href="${a.image_url}" target="_blank" title="Open full size">
                     <img src="${a.image_url}" loading="lazy" alt="${esc(a.patient_code || a.image_id)}">
                 </a>
@@ -442,7 +467,10 @@ async function loadBrowser() {
         }
         grid.innerHTML = d.items.map(img => `
             <div class="ann-card">
-                <button class="ann-del-btn" onclick="deleteImage('${img.id}')" title="Delete image">Delete</button>
+                <div class="ann-actions">
+                    <button class="ann-crop-btn" onclick="openCropModal('${img.id}', '/api/v1/images/${img.id}/file')" title="Crop image">Crop</button>
+                    <button class="ann-del-btn" onclick="deleteImage('${img.id}')" title="Delete image">Delete</button>
+                </div>
                 <a href="/api/v1/images/${img.id}/file" target="_blank" title="Open full size">
                     <img src="/api/v1/images/${img.id}/file" loading="lazy" alt="${esc(img.id)}">
                 </a>
@@ -505,5 +533,88 @@ initDownloads();
 loadPatients();
 loadAnnotated();
 loadBrowser();
+
+// ----- Cropping Logic -----
+let cropperInstance = null;
+let currentCropImageId = null;
+
+function openCropModal(imageId, imageUrl) {
+    currentCropImageId = imageId;
+    const modal = document.getElementById('cropModal');
+    const imgEl = document.getElementById('cropTargetImage');
+    
+    if (cropperInstance) {
+        cropperInstance.destroy();
+        cropperInstance = null;
+    }
+    imgEl.src = '';
+    
+    modal.style.display = 'flex';
+    imgEl.src = imageUrl;
+    
+    imgEl.onload = () => {
+        cropperInstance = new Cropper(imgEl, {
+            viewMode: 1,
+            dragMode: 'crop',
+            autoCropArea: 0.8,
+            restore: false,
+            guides: true,
+            center: true,
+            highlight: false,
+            cropBoxMovable: true,
+            cropBoxResizable: true,
+            toggleDragModeOnDblclick: false,
+        });
+    };
+}
+
+function closeCropModal() {
+    const modal = document.getElementById('cropModal');
+    modal.style.display = 'none';
+    if (cropperInstance) {
+        cropperInstance.destroy();
+        cropperInstance = null;
+    }
+    currentCropImageId = null;
+}
+
+async function saveCrop() {
+    if (!cropperInstance || !currentCropImageId) return;
+    
+    const cropData = cropperInstance.getData(true); // true = rounded integers
+    if (cropData.width <= 0 || cropData.height <= 0) {
+        alert("Please select a valid crop area.");
+        return;
+    }
+    
+    if (!confirm('This will permanently crop the image and delete any existing annotations. Proceed?')) return;
+    
+    const btn = document.getElementById('saveCropBtn');
+    btn.textContent = 'Saving...';
+    btn.disabled = true;
+    
+    try {
+        const res = await api(`/api/v1/admin/images/${currentCropImageId}/crop`, {
+            method: 'POST',
+            body: JSON.stringify({
+                x: cropData.x,
+                y: cropData.y,
+                width: cropData.width,
+                height: cropData.height
+            })
+        });
+        flash(res.message, 'success');
+        closeCropModal();
+        
+        loadAnnotated();
+        loadBrowser();
+        loadPatients();
+    } catch (e) {
+        flash(e.message, 'error');
+    } finally {
+        btn.textContent = 'Crop & Overwrite';
+        btn.disabled = false;
+    }
+}
 </script>
 {% endblock %}

@@ -181,7 +181,7 @@
         fitImage();
     }
 
-    function fitImage() {
+    function fitImage(animate = false) {
         const img = state.imageLayer.findOne('Image');
         if (!img) return;
         const sw = state.stage.width(), sh = state.stage.height();
@@ -189,9 +189,58 @@
         const scale = Math.min(sw / iw, sh / ih);
         state.scale = scale;
         state.offset = {x: (sw - iw * scale) / 2, y: (sh - ih * scale) / 2};
-        state.stage.scale({x: scale, y: scale});
-        state.stage.position(state.offset);
-        state.stage.batchDraw();
+        
+        if (animate && Konva.Tween) {
+            new Konva.Tween({
+                node: state.stage,
+                duration: 0.3,
+                scaleX: scale,
+                scaleY: scale,
+                x: state.offset.x,
+                y: state.offset.y,
+                easing: Konva.Easings.EaseInOut,
+                onFinish: () => state.stage.batchDraw()
+            }).play();
+        } else {
+            state.stage.scale({x: scale, y: scale});
+            state.stage.position(state.offset);
+            state.stage.batchDraw();
+        }
+    }
+
+    function fitToCrop(geom, animate = false) {
+        if (!geom || !geom.w || !geom.h) return;
+        const sw = state.stage.width(), sh = state.stage.height();
+        // Add a small padding (5%) so the crop box isn't flush against the edges
+        const padding = 0.05;
+        const availW = sw * (1 - padding * 2);
+        const availH = sh * (1 - padding * 2);
+        
+        let scale = Math.min(availW / geom.w, availH / geom.h);
+        scale = Math.max(0.1, Math.min(8, scale));
+        
+        state.scale = scale;
+        state.offset = {
+            x: (sw - geom.w * scale) / 2 - geom.x * scale,
+            y: (sh - geom.h * scale) / 2 - geom.y * scale
+        };
+        
+        if (animate && Konva.Tween) {
+            new Konva.Tween({
+                node: state.stage,
+                duration: 0.3,
+                scaleX: scale,
+                scaleY: scale,
+                x: state.offset.x,
+                y: state.offset.y,
+                easing: Konva.Easings.EaseInOut,
+                onFinish: () => state.stage.batchDraw()
+            }).play();
+        } else {
+            state.stage.scale({x: scale, y: scale});
+            state.stage.position(state.offset);
+            state.stage.batchDraw();
+        }
     }
 
     function attachStageEvents() {
@@ -441,24 +490,38 @@
         drawCropBox(geom);
         // Autosave merges this into state.annotation.crop_box and PATCHes it.
         queueAutosave({crop_box: geom});
+        state.imageLayer.clip({ x: geom.x, y: geom.y, width: geom.w, height: geom.h });
+        state.imageLayer.batchDraw();
+        fitToCrop(geom, true);
     }
 
     function clearCrop() {
         if (state.annotation && state.annotation.status && state.annotation.status !== 'draft') return;
         if (state.cropNode) { state.cropNode.destroy(); state.cropNode = null; }
         state.regionLayer.batchDraw();
+        state.imageLayer.clip(null);
+        state.imageLayer.batchDraw();
         updateCropInfo(null);
         if (state.annotation && state.annotation.crop_box) {
             // Zero-area box tells the server to clear the crop.
             queueAutosave({crop_box: {x: 0, y: 0, w: 0, h: 0}});
         }
         if (state.annotation) state.annotation.crop_box = null;
+        fitImage(true);
     }
 
     function renderCropFromState() {
         const box = state.annotation?.crop_box;
-        if (box && box.w && box.h) drawCropBox(box);
-        else updateCropInfo(null);
+        if (box && box.w && box.h) {
+            drawCropBox(box);
+            state.imageLayer.clip({ x: box.x, y: box.y, width: box.w, height: box.h });
+            state.imageLayer.batchDraw();
+            fitToCrop(box, false);
+        } else {
+            state.imageLayer.clip(null);
+            state.imageLayer.batchDraw();
+            updateCropInfo(null);
+        }
     }
 
     // ---------- Mask brush helpers ----------

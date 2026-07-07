@@ -10,6 +10,9 @@ keeps all their existing annotations intact.
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
+import io
+from PIL import Image as PILImage
 
 from flask import Blueprint, current_app, jsonify, request
 from flask_login import current_user, login_required
@@ -314,6 +317,91 @@ def delete_image(image_id: str):
     summary = _delete_images([img])
     db.session.commit()
     return jsonify({'image_id': image_id, **summary})
+
+@bp.post('/images/<image_id>/crop')
+@login_required
+def crop_image(image_id: str):
+    """Crop the original image in place and delete existing annotations."""
+    guard = _require_admin()
+    if guard is not None:
+        return guard
+
+    img = db.session.get(Image, image_id)
+    if img is None:
+        return error_response('not_found', 'Image not found.', status=404)
+
+    payload = request.get_json()
+    if not payload:
+        return error_response('invalid_request', 'Missing JSON body.', status=400)
+    
+    try:
+        x = int(payload['x'])
+        y = int(payload['y'])
+        w = int(payload['width'])
+        h = int(payload['height'])
+    except (KeyError, TypeError, ValueError):
+        return error_response('invalid_request', 'Invalid crop coordinates.', status=400)
+    
+    if w <= 0 or h <= 0:
+        return error_response('invalid_request', 'Crop dimensions must be positive.', status=400)
+
+    try:
+        with storage.open_image(img.source_path) as fh:
+            with PILImage.open(fh) as pil_img:
+                pil_img.load()
+                # Clamp coordinates to actual image bounds
+                left = max(0, min(x, pil_img.width))
+                top = max(0, min(y, pil_img.height))
+                right = min(x + w, pil_img.width)
+                bottom = min(y + h, pil_img.height)
+
+                if right <= left or bottom <= top:
+                    return error_response('invalid_request', 'Crop area outside image bounds.', status=400)
+
+                cropped = pil_img.crop((left, top, right, bottom))
+                if cropped.mode not in ('RGB', 'L'):
+                    cropped = cropped.convert('RGB')
+                
+                out = io.BytesIO()
+                fmt = pil_img.format or 'JPEG'
+                cropped.save(out, format=fmt)
+                new_data = out.getvalue()
+                
+                new_sha256 = hashlib.sha256(new_data).hexdigest()
+                new_size = len(new_data)
+                
+                ext = '.png' if fmt == 'PNG' else '.jpg'
+                new_key = f"admin_crops/{new_sha256}{ext}"
+                
+                existing_img = Image.query.filter_by(sha256=new_sha256).first()
+                if existing_img and existing_img.id != img.id:
+                    return error_response('conflict', 'This exact cropped image already exists in the database as another image.', status=409)
+
+                new_source_path = storage.save_image(new_data, new_key, content_type=f'image/{fmt.lower()}')
+    except (FileNotFoundError, OSError, storage.StorageError) as e:
+        current_app.logger.error("Failed to process crop for %s: %s", img.id, e)
+        return error_response('internal_error', f'Failed to process crop: {e}', status=500)
+
+    if img.source_path != new_source_path:
+        try:
+            storage.delete_image(img.source_path)
+        except storage.StorageError as e:
+            current_app.logger.warning("Failed to delete old blob %s: %s", img.source_path, e)
+    
+    img.source_path = new_source_path
+    img.sha256 = new_sha256
+    img.width_px = cropped.width
+    img.height_px = cropped.height
+    img.file_size_bytes = new_size
+
+    ImageAnnotation.query.filter_by(image_id=img.id).delete(synchronize_session=False)
+    ConsensusLabel.query.filter_by(image_id=img.id).delete(synchronize_session=False)
+    DiscardedImage.query.filter_by(image_id=img.id).delete(synchronize_session=False)
+    
+    db.session.commit()
+
+    return jsonify({'message': 'Image cropped and reset successfully', 'image': img.to_dict()})
+
 
 
 @bp.get('/annotated')
