@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 import hashlib
 import io
+import os
 from PIL import Image as PILImage
 
 from flask import Blueprint, current_app, jsonify, request
@@ -369,26 +370,23 @@ def crop_image(image_id: str):
                 
                 new_sha256 = hashlib.sha256(new_data).hexdigest()
                 new_size = len(new_data)
-                
-                ext = '.png' if fmt == 'PNG' else '.jpg'
-                new_key = f"admin_crops/{new_sha256}{ext}"
-                
+
                 existing_img = Image.query.filter_by(sha256=new_sha256).first()
                 if existing_img and existing_img.id != img.id:
                     return error_response('conflict', 'This exact cropped image already exists in the database as another image.', status=409)
 
-                new_source_path = storage.save_image(new_data, new_key, content_type=f'image/{fmt.lower()}')
+                # Overwrite the original object in place: same folder, same key.
+                # Supabase uploads use x-upsert, so re-writing the key replaces
+                # the blob; a source_path that is a real on-disk file is
+                # rewritten directly (covers in-place ingested images too).
+                if os.path.isabs(img.source_path) and os.path.exists(img.source_path):
+                    Path(img.source_path).write_bytes(new_data)
+                else:
+                    storage.save_image(new_data, img.source_path, content_type=f'image/{fmt.lower()}')
     except (FileNotFoundError, OSError, storage.StorageError) as e:
         current_app.logger.error("Failed to process crop for %s: %s", img.id, e)
         return error_response('internal_error', f'Failed to process crop: {e}', status=500)
 
-    if img.source_path != new_source_path:
-        try:
-            storage.delete_image(img.source_path)
-        except storage.StorageError as e:
-            current_app.logger.warning("Failed to delete old blob %s: %s", img.source_path, e)
-    
-    img.source_path = new_source_path
     img.sha256 = new_sha256
     img.width_px = cropped.width
     img.height_px = cropped.height

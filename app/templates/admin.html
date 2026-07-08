@@ -158,6 +158,11 @@
             <div><button class="secondary" onclick="loadBrowser()">Filter</button></div>
         </div>
         <div id="browserGallery" class="ann-gallery"><span class="muted">Loading...</span></div>
+        <div style="display:flex; justify-content:center; align-items:center; gap:14px; margin-top:14px;">
+            <button class="secondary" id="browserPrevBtn" onclick="browserPrev()" disabled>&larr; Prev</button>
+            <span class="muted" id="browserPageInfo"></span>
+            <button class="secondary" id="browserNextBtn" onclick="browserNext()" disabled>Next &rarr;</button>
+        </div>
     </div>
 
     <div class="card">
@@ -419,7 +424,7 @@ async function deleteImage(imageId) {
         loadAnnotated();
         loadPatients();
         refreshDatasetDropdowns();
-        loadBrowser();
+        reloadBrowserPage();
     } catch (e) {
         flash(e.message, 'error');
     }
@@ -451,19 +456,62 @@ async function loadAnnotated() {
     }
 }
 
-async function loadBrowser() {
-    const pat = document.getElementById('browsePatient').value.trim();
+// ----- image browser (paged gallery, 50 per page) -----
+const BROWSER_PAGE_SIZE = 50;
+let browserCursors = [null];   // cursor that fetches page i (null = first page)
+let browserPage = 0;
+let browserNextCursor = null;
+let browserPatient = '';
+
+function loadBrowser() {
+    // Fresh view: apply the patient filter and start back at page 1.
+    browserPatient = document.getElementById('browsePatient').value.trim();
+    browserCursors = [null];
+    loadBrowserPage(0);
+}
+
+function browserNext() {
+    if (!browserNextCursor) return;
+    browserCursors[browserPage + 1] = browserNextCursor;
+    loadBrowserPage(browserPage + 1);
+}
+
+function browserPrev() {
+    if (browserPage > 0) loadBrowserPage(browserPage - 1);
+}
+
+function reloadBrowserPage() {
+    loadBrowserPage(browserPage);
+}
+
+function updateBrowserPager(count) {
+    document.getElementById('browserPrevBtn').disabled = browserPage === 0;
+    document.getElementById('browserNextBtn').disabled = !browserNextCursor;
+    const start = browserPage * BROWSER_PAGE_SIZE;
+    document.getElementById('browserPageInfo').textContent = count
+        ? `Page ${browserPage + 1} — images ${start + 1}–${start + count}`
+        : `Page ${browserPage + 1}`;
+}
+
+async function loadBrowserPage(page) {
     const grid = document.getElementById('browserGallery');
     grid.innerHTML = '<span class="muted">Loading...</span>';
     try {
-        let url = '/api/v1/images?status=all&limit=50';
-        if (pat) {
-            url += `&patient_code=${encodeURIComponent(pat)}`;
+        let url = `/api/v1/images?status=all&limit=${BROWSER_PAGE_SIZE}`;
+        if (browserPatient) {
+            url += `&patient_code=${encodeURIComponent(browserPatient)}`;
+        }
+        const cursor = browserCursors[page];
+        if (cursor) {
+            url += `&cursor=${encodeURIComponent(cursor)}`;
         }
         const d = await api(url);
-        if (!d.items.length) { 
-            grid.innerHTML = '<span class="muted">No images found.</span>'; 
-            return; 
+        browserPage = page;
+        browserNextCursor = d.next_cursor || null;
+        updateBrowserPager(d.items.length);
+        if (!d.items.length) {
+            grid.innerHTML = '<span class="muted">No images found.</span>';
+            return;
         }
         grid.innerHTML = d.items.map(img => `
             <div class="ann-card">
@@ -607,7 +655,7 @@ async function saveCrop() {
         closeCropModal();
         
         loadAnnotated();
-        loadBrowser();
+        reloadBrowserPage();
         loadPatients();
     } catch (e) {
         flash(e.message, 'error');
