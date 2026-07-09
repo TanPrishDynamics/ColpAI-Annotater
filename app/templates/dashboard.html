@@ -27,9 +27,24 @@
         grid-template-columns: 56px 1fr auto;
         gap: 12px;
         align-items: center;
-        padding: 8px 0;
+        padding: 8px;
+        margin: 0 -8px;
+        border-radius: 8px;
         border-bottom: 1px solid var(--border);
+        transition: background 0.15s ease;
     }
+    .recent-row:hover { background: var(--surface-2); }
+    .img-card {
+        background: var(--surface-2);
+        border-radius: 8px;
+        overflow: hidden;
+        text-decoration: none;
+        color: inherit;
+        display: block;
+        border: 1px solid transparent;
+        transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+    .img-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); text-decoration: none; }
     .recent-row img { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; background: #000; }
     .recent-row .meta { font-size: 12px; color: var(--fg-muted); }
     .dx-badge {
@@ -203,7 +218,7 @@ async function loadDistribution() {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: {position: 'right', labels: {color: '#e6e8ee'}},
+                legend: {position: 'right', labels: {color: '#334155'}},
             },
         },
     });
@@ -260,10 +275,10 @@ async function loadProductivity() {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                x: {stacked: true, ticks: {color: '#8b91a0'}, grid: {color: '#2a2f3a'}},
-                y: {stacked: true, beginAtZero: true, ticks: {color: '#8b91a0'}, grid: {color: '#2a2f3a'}},
+                x: {stacked: true, ticks: {color: '#64748B'}, grid: {color: '#E2E8F0'}},
+                y: {stacked: true, beginAtZero: true, ticks: {color: '#64748B'}, grid: {color: '#E2E8F0'}},
             },
-            plugins: {legend: {labels: {color: '#e6e8ee'}}},
+            plugins: {legend: {labels: {color: '#334155'}}},
         },
     });
 }
@@ -322,7 +337,7 @@ async function loadImages() {
         return;
     }
     grid.innerHTML = d.items.map(img => `
-        <a href="/annotate/${img.id}" style="background: var(--surface-2); border-radius: 8px; overflow: hidden; text-decoration: none; color: inherit; display: block;">
+        <a href="/annotate/${img.id}" class="img-card" title="Open in annotator">
             <img src="/api/v1/images/${img.id}/file" alt="" loading="lazy"
                  style="width: 100%; height: 140px; object-fit: cover; display: block; background: #000;"
                  onerror="this.style.display='none'">

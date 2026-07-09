@@ -103,8 +103,9 @@
         gap: 12px;
         align-items: center;
         justify-content: space-between;
+        flex-wrap: wrap;
     }
-    .review-actions .right { display: flex; gap: 12px; }
+    .review-actions .right { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
     .review-actions textarea {
         background: var(--surface-2);
         color: var(--fg);
@@ -112,8 +113,8 @@
         border-radius: 6px;
         padding: 8px 10px;
         font-size: 13px;
-        width: 320px;
-        height: 38px;
+        width: min(320px, 100%);
+        height: 44px;
         resize: none;
         font-family: inherit;
     }

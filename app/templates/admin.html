@@ -5,38 +5,54 @@
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
     th { color: var(--fg-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+    tbody tr:hover { background: var(--surface-2); }
     .role-pill { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-    .role-admin { background: #8a4fbf33; color: #c59bff; }
-    .role-reviewer { background: #4f8cff33; color: #9cc0ff; }
-    .role-annotator { background: #46c98b33; color: #8fe3bd; }
-    .pill-off { background: #ff5b5b22; color: var(--danger); padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+    .role-admin { background: #EDE9FE; color: #6D28D9; }
+    .role-reviewer { background: #E0F2FE; color: #0E7490; }
+    .role-annotator { background: #D1FAE5; color: #047857; }
+    .pill-off { background: #FEE2E2; color: #B91C1C; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
     .pill-on { color: var(--success); font-size: 12px; }
-    .row-actions button { padding: 4px 10px; font-size: 12px; margin-right: 4px; }
+    .row-actions button { padding: 4px 10px; font-size: 12px; margin-right: 4px; min-height: 32px; }
     .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; }
     .dl-grid { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
     .dl-grid label { margin-bottom: 4px; }
     .dl-grid select { width: auto; }
     .ann-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
-    .ann-card { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-elev, #1a1f29); position: relative; }
+    .ann-card { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); position: relative; transition: box-shadow 0.15s ease, border-color 0.15s ease; }
+    .ann-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
     .ann-actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 10; }
     .ann-del-btn { position: static !important; }
-    .ann-crop-btn { background: var(--bg-hover); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 11px; cursor: pointer; }
-    .ann-crop-btn:hover { background: var(--border); }
+    .ann-crop-btn { background: rgba(255,255,255,0.92); color: var(--fg); border: 1px solid var(--border-strong); border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; min-height: 0; }
+    .ann-crop-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
 <style>
-    .ann-del-btn { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.6); color: #ff5b5b; border: 1px solid #ff5b5b; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; display: none; }
+    .ann-del-btn { background: rgba(255,255,255,0.92); color: #B91C1C; border: 1px solid #FCA5A5; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; display: none; min-height: 0; }
     .ann-card:hover .ann-del-btn { display: block; }
-    .ann-del-btn:hover { background: #ff5b5b; color: #fff; }
+    .ann-del-btn:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
     .ann-card a { display: block; }
     .ann-card img { width: 100%; height: 150px; object-fit: contain; background: #0d1016; display: block; }
     .ann-meta { padding: 6px 8px; font-size: 12px; }
     .ann-meta .muted { font-size: 11px; }
     .stat-pill { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-    .stat-done { background: #46c98b33; color: #8fe3bd; }
-    .stat-partial { background: #c9a53133; color: #e6cf86; }
-    .stat-not_started { background: #ff5b5b22; color: var(--danger); }
+    .stat-done { background: #D1FAE5; color: #047857; }
+    .stat-partial { background: #FEF3C7; color: #B45309; }
+    .stat-not_started { background: #FEE2E2; color: #B91C1C; }
     .pat-filter[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+    /* Flash messages float over the page so they're visible from any scroll position. */
+    #flash { position: fixed; top: 72px; right: 16px; z-index: 10000; width: min(420px, calc(100vw - 32px)); }
+    #flash .alert { box-shadow: var(--shadow-md); margin-bottom: 8px; }
+    /* Section quick-nav for this long page. */
+    .section-nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .section-nav a {
+        font-size: 12px; font-weight: 600; color: var(--fg-muted);
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: 999px; padding: 6px 12px; text-decoration: none;
+    }
+    .section-nav a:hover { color: var(--accent); border-color: var(--accent); text-decoration: none; }
+    .card[id] { scroll-margin-top: 84px; }
+    .danger-zone { border-color: #FECACA; }
+    .danger-zone h2 { color: #B91C1C; }
 </style>
 <header>
     <h1>ColpAI &middot; Admin</h1>
@@ -50,7 +66,18 @@
 <main>
     <div id="flash"></div>
 
-    <div class="card">
+    <nav class="section-nav" aria-label="Page sections">
+        <a href="#sec-add-user">Add user</a>
+        <a href="#sec-upload">Upload</a>
+        <a href="#sec-users">Users</a>
+        <a href="#sec-downloads">Downloads</a>
+        <a href="#sec-patients">Patients</a>
+        <a href="#sec-browser">Image browser</a>
+        <a href="#sec-annotated">Annotated</a>
+        <a href="#sec-danger">Danger zone</a>
+    </nav>
+
+    <div class="card" id="sec-add-user">
         <h2>Add a doctor / user</h2>
         <p class="muted" style="margin-top:0;">Create a login and share the username + password with the person. They sign in at this same site.</p>
         <div class="form-grid">
@@ -68,7 +95,7 @@
         </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-upload">
         <h2>Upload images for annotation</h2>
         <p class="muted" style="margin-top:0;">Add new images into a dataset. They show up in the annotation queue right away. Duplicates (same image) are skipped automatically.</p>
         <div class="form-grid">
@@ -78,22 +105,17 @@
                 <input id="upFiles" type="file" accept="image/*" multiple>
             </div>
             <div><button id="upBtn" onclick="uploadImages()">Upload</button></div>
-            <div style="grid-column: 1 / -1; border-top:1px solid var(--border,#2a2f3a); margin-top:4px; padding-top:10px;">
+            <div style="grid-column: 1 / -1; border-top:1px solid var(--border); margin-top:4px; padding-top:10px;">
                 <label>…or upload whole folder(s) — each folder becomes a patient (auto-named PAT-001, PAT-002, …)</label>
                 <input id="upFolder" type="file" accept="image/*" multiple webkitdirectory directory>
             </div>
             <div><button id="upFolderBtn" onclick="uploadFolder()">Upload folder</button></div>
-            <div style="grid-column: 1 / -1; border-top:1px solid var(--border,#2a2f3a); margin-top:4px; padding-top:10px;">
-                <label>Delete a patient — removes its images from the bucket and the database</label>
-                <input id="delPatient" placeholder="e.g. PAT-007">
-            </div>
-            <div><button id="delPatientBtn" class="danger" onclick="deletePatient()">Delete patient</button></div>
         </div>
         <div id="upProgress" class="muted" style="margin-top:10px;"></div>
         <div id="upResult" style="margin-top:10px;"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-users">
         <h2>Users &amp; progress</h2>
         <table>
             <thead>
@@ -107,7 +129,7 @@
         </table>
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-downloads">
         <h2>Download annotations</h2>
         <p class="muted" style="margin-top:0;">Pick a dataset and which annotations to include, then download.</p>
         <div class="dl-grid" style="margin-bottom:14px;">
@@ -133,7 +155,7 @@
         </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-patients">
         <h2>Patients</h2>
         <p class="muted" style="margin-top:0;">Annotation progress per patient. <span id="patSummary"></span></p>
         <div style="margin-bottom:10px; display:flex; gap:8px; flex-wrap:wrap;">
@@ -150,7 +172,7 @@
         </table>
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-browser">
         <h2>Image Browser (All Images)</h2>
         <p class="muted" style="margin-top:0;">Browse all uploaded images. Use the filter to search by patient code. You can delete any individual image here.</p>
         <div class="dl-grid" style="margin-bottom:14px; align-items:end;">
@@ -165,17 +187,26 @@
         </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-annotated">
         <h2>Annotated images</h2>
         <p class="muted" style="margin-top:0;">Every completed annotation's final image (crop region with the drawn regions on it), stored under <code>annotated/PAT-NNN/</code>. <span id="annCount"></span></p>
         <div id="annGallery" class="ann-gallery"><span class="muted">Loading...</span></div>
     </div>
+
+    <div class="card danger-zone" id="sec-danger">
+        <h2>Danger zone</h2>
+        <p class="muted" style="margin-top:0;">Delete a patient — permanently removes all of their images from storage and the database, along with any annotations. This cannot be undone.</p>
+        <div class="dl-grid">
+            <div><label>Patient code</label><input id="delPatient" placeholder="e.g. PAT-007"></div>
+            <div><button id="delPatientBtn" class="danger" onclick="deletePatient()">Delete patient</button></div>
+        </div>
+    </div>
 </main>
 
-<div id="cropModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 9999; flex-direction: column; align-items: center; justify-content: center;">
-    <div style="background: var(--bg-elev, #1a1f29); padding: 20px; border-radius: 8px; width: 90vw; max-width: 800px; display: flex; flex-direction: column; gap: 16px;">
-        <h3 style="margin: 0; color: white;">Crop Image (Destructive)</h3>
-        <p class="muted" style="margin: 0;">This will permanently overwrite the original image and delete any existing annotations.</p>
+<div id="cropModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 9999; flex-direction: column; align-items: center; justify-content: center;">
+    <div style="background: var(--surface); padding: 20px; border-radius: 12px; width: 90vw; max-width: 800px; display: flex; flex-direction: column; gap: 16px; box-shadow: var(--shadow-md);">
+        <h3 style="margin: 0; color: var(--fg); font-family: var(--font-heading);">Crop image</h3>
+        <p class="muted" style="margin: 0;">This permanently overwrites the original image and deletes any existing annotations for it.</p>
         <div style="flex: 1; height: 60vh; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center;">
             <img id="cropTargetImage" style="max-width: 100%; max-height: 100%; display: block;" src="">
         </div>
@@ -350,12 +381,12 @@ async function deletePatient() {
         });
         const d = await res.json();
         if (!res.ok) throw new Error(d?.error?.message || `HTTP ${res.status}`);
-        document.getElementById('upResult').innerHTML =
-            `<div class="alert success">Deleted ${code}: ${d.rows_deleted} row(s), `
-            + `${d.blobs_deleted} blob(s) removed (${d.blobs_missing} already gone).</div>`;
         input.value = '';
-        flash(`Deleted ${code}.`);
+        flash(`Deleted ${code}: ${d.rows_deleted} image(s), ${d.blobs_deleted} file(s) removed.`);
         refreshDatasetDropdowns();
+        loadPatients();
+        reloadBrowserPage();
+        loadAnnotated();
     } catch (e) {
         flash(e.message, 'error');
     } finally {
@@ -474,10 +505,13 @@ function browserNext() {
     if (!browserNextCursor) return;
     browserCursors[browserPage + 1] = browserNextCursor;
     loadBrowserPage(browserPage + 1);
+    document.getElementById('sec-browser').scrollIntoView({behavior: 'smooth'});
 }
 
 function browserPrev() {
-    if (browserPage > 0) loadBrowserPage(browserPage - 1);
+    if (browserPage === 0) return;
+    loadBrowserPage(browserPage - 1);
+    document.getElementById('sec-browser').scrollIntoView({behavior: 'smooth'});
 }
 
 function reloadBrowserPage() {
@@ -576,6 +610,10 @@ document.querySelectorAll('.pat-filter').forEach(btn => {
     });
 });
 
+document.getElementById('browsePatient').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') loadBrowser();
+});
+
 loadUsers().catch(e => flash(e.message, 'error'));
 initDownloads();
 loadPatients();
@@ -625,6 +663,12 @@ function closeCropModal() {
     }
     currentCropImageId = null;
 }
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('cropModal').style.display === 'flex') {
+        closeCropModal();
+    }
+});
 
 async function saveCrop() {
     if (!cropperInstance || !currentCropImageId) return;
