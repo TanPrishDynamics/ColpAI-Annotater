@@ -7,6 +7,8 @@ from sqlalchemy import Enum as SAEnum, UniqueConstraint, Index
 from app.extensions import db
 from app.models.enums import (
     AnnotationStatus,
+    ColposcopyAdequacy,
+    IFCPCGrade,
     ImageQuality,
     LightingIssue,
     SCJVisibility,
@@ -15,7 +17,6 @@ from app.models.enums import (
     VascularPattern,
     ColorTone,
     SurfaceContour,
-    DiagnosisLabel,
 )
 
 
@@ -65,27 +66,15 @@ class ImageAnnotation(db.Model):
     surface_contour = db.Column(SAEnum(SurfaceContour, name='surface_contour'), nullable=True)
     atypical_vessels_present = db.Column(db.Boolean, nullable=True)
 
-    colposcopic_impression = db.Column(db.JSON, nullable=True)  # list of DiagnosisLabel strings, e.g. ["CIN1", "INFLAMMATION"]
-    histopathology_result = db.Column(
-        SAEnum(DiagnosisLabel, name='diagnosis_label_histo'),
-        nullable=True,
-    )
-    confidence = db.Column(db.Integer, nullable=True)
+    # IFCPC 2011 per-view summary: how this single photo reads on its own, and
+    # whether the colposcopic view is assessable.
+    ifcpc_grade = db.Column(SAEnum(IFCPCGrade, name='ifcpc_grade'), nullable=True)
+    colposcopy_adequacy = db.Column(SAEnum(ColposcopyAdequacy, name='colposcopy_adequacy'), nullable=True)
+
+    # General free-text observation about this photo. The FINAL diagnosis,
+    # histopathology, confidence, and Reid/Swede scoring all live at the patient
+    # level now (see app/models/patient.py) -- nothing diagnostic remains per-image.
     notes = db.Column(db.Text, nullable=True)
-
-    # Colposcopic scoring indices. Each criterion is graded 0/1/2; totals are
-    # derived (see reid_total / swede_total). Reid Colposcopic Index (RCI, 0-8)
-    # and Swede score (0-10).
-    reid_margin = db.Column(db.Integer, nullable=True)
-    reid_color = db.Column(db.Integer, nullable=True)
-    reid_vessels = db.Column(db.Integer, nullable=True)
-    reid_iodine = db.Column(db.Integer, nullable=True)
-
-    swede_aceto = db.Column(db.Integer, nullable=True)
-    swede_margin = db.Column(db.Integer, nullable=True)
-    swede_vessels = db.Column(db.Integer, nullable=True)
-    swede_size = db.Column(db.Integer, nullable=True)
-    swede_iodine = db.Column(db.Integer, nullable=True)
 
     # Optional crop region the annotator drew (image pixel coords: {x, y, w, h}).
     # On reviewer approval, the final annotated image is rendered and stored under
@@ -113,19 +102,6 @@ class ImageAnnotation(db.Model):
         cascade='all, delete-orphan',
         lazy='dynamic',
     )
-
-    @property
-    def reid_total(self) -> int | None:
-        """Reid Colposcopic Index total (0-8), or None until all 4 criteria are scored."""
-        parts = (self.reid_margin, self.reid_color, self.reid_vessels, self.reid_iodine)
-        return sum(parts) if all(p is not None for p in parts) else None
-
-    @property
-    def swede_total(self) -> int | None:
-        """Swede score total (0-10), or None until all 5 criteria are scored."""
-        parts = (self.swede_aceto, self.swede_margin, self.swede_vessels,
-                 self.swede_size, self.swede_iodine)
-        return sum(parts) if all(p is not None for p in parts) else None
 
     def to_dict(self, include_regions: bool = False) -> dict:
         out = {
@@ -156,25 +132,11 @@ class ImageAnnotation(db.Model):
                 'surface_contour': self.surface_contour.value if self.surface_contour else None,
                 'atypical_vessels_present': self.atypical_vessels_present,
             },
-            'diagnosis': {
-                'colposcopic_impression': self.colposcopic_impression or [],
-                'histopathology_result': self.histopathology_result.value if self.histopathology_result else None,
-                'confidence': self.confidence,
-                'notes': self.notes,
+            'assessment': {
+                'ifcpc_grade': self.ifcpc_grade.value if self.ifcpc_grade else None,
+                'colposcopy_adequacy': self.colposcopy_adequacy.value if self.colposcopy_adequacy else None,
             },
-            'scoring': {
-                'reid_margin': self.reid_margin,
-                'reid_color': self.reid_color,
-                'reid_vessels': self.reid_vessels,
-                'reid_iodine': self.reid_iodine,
-                'reid_total': self.reid_total,
-                'swede_aceto': self.swede_aceto,
-                'swede_margin': self.swede_margin,
-                'swede_vessels': self.swede_vessels,
-                'swede_size': self.swede_size,
-                'swede_iodine': self.swede_iodine,
-                'swede_total': self.swede_total,
-            },
+            'notes': self.notes,
             'crop_box': self.crop_box,
             'has_crop_image': bool(self.crop_path),
             'created_at': self.created_at.isoformat() if self.created_at else None,

@@ -1,70 +1,113 @@
 {% extends "base.html" %}
+{% from "_nav.html" import navbar %}
 {% block title %}Admin - ColpAI{% endblock %}
 {% block body %}
-<style>
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
-    th { color: var(--fg-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
-    tbody tr:hover { background: var(--surface-2); }
-    .role-pill { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-    .role-admin { background: #EDE9FE; color: #6D28D9; }
-    .role-reviewer { background: #E0F2FE; color: #0E7490; }
-    .role-annotator { background: #D1FAE5; color: #047857; }
-    .pill-off { background: #FEE2E2; color: #B91C1C; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
-    .pill-on { color: var(--success); font-size: 12px; }
-    .row-actions button { padding: 4px 10px; font-size: 12px; margin-right: 4px; min-height: 32px; }
-    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; }
-    .dl-grid { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
-    .dl-grid label { margin-bottom: 4px; }
-    .dl-grid select { width: auto; }
-    .ann-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
-    .ann-card { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); position: relative; transition: box-shadow 0.15s ease, border-color 0.15s ease; }
-    .ann-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
-    .ann-actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 10; }
-    .ann-del-btn { position: static !important; }
-    .ann-crop-btn { background: rgba(255,255,255,0.92); color: var(--fg); border: 1px solid var(--border-strong); border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; min-height: 0; }
-    .ann-crop-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
-</style>
+{{ navbar(user, active='admin') }}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
 <style>
-    .ann-del-btn { background: rgba(255,255,255,0.92); color: #B91C1C; border: 1px solid #FCA5A5; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; display: none; min-height: 0; }
-    .ann-card:hover .ann-del-btn { display: block; }
+    /* Data tables */
+    .table-wrap { overflow-x: auto; margin: 0 -6px; padding: 0 6px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); }
+    th {
+        color: var(--fg-muted);
+        font-weight: 700;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        white-space: nowrap;
+    }
+    td { font-variant-numeric: tabular-nums; }
+    tbody tr { transition: background 0.15s ease; }
+    tbody tr:hover { background: var(--surface-2); }
+
+    .role-pill { padding: 2px 9px; border-radius: var(--r-full); font-size: 11px; font-weight: 700; }
+    .role-admin { background: #EDE9FE; color: #6D28D9; }
+    .role-reviewer { background: var(--accent-soft); color: var(--accent); }
+    .role-annotator { background: var(--success-soft); color: var(--success); }
+    .pill-off { background: var(--danger-soft); color: #991B1B; padding: 2px 9px; border-radius: var(--r-full); font-size: 11px; font-weight: 600; }
+    .pill-on { color: var(--success); font-size: 12px; font-weight: 600; }
+    .row-actions { white-space: nowrap; }
+    .row-actions button { padding: 3px 10px; font-size: 12px; margin-right: 4px; min-height: 30px; border-radius: var(--r-sm); }
+
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; }
+    .dl-grid { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+    .dl-grid label { margin-bottom: 5px; }
+    .dl-grid select { width: auto; min-width: 170px; }
+
+    /* Image galleries */
+    .ann-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+    .ann-card {
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        overflow: hidden;
+        background: var(--surface);
+        position: relative;
+        transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+    .ann-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+    .ann-actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 10; }
+    .ann-crop-btn, .ann-del-btn {
+        border-radius: var(--r-sm);
+        padding: 4px 9px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        min-height: 0;
+        backdrop-filter: blur(4px);
+        box-shadow: var(--shadow-sm);
+    }
+    .ann-crop-btn { background: rgba(255,255,255,0.94); color: var(--fg); border: 1px solid var(--border-strong); }
+    .ann-crop-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .ann-del-btn { background: rgba(255,255,255,0.94); color: #991B1B; border: 1px solid var(--danger-border); display: none; }
+    .ann-card:hover .ann-del-btn, .ann-card:focus-within .ann-del-btn { display: block; }
     .ann-del-btn:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
     .ann-card a { display: block; }
-    .ann-card img { width: 100%; height: 150px; object-fit: contain; background: #0d1016; display: block; }
-    .ann-meta { padding: 6px 8px; font-size: 12px; }
+    .ann-card img { width: 100%; height: 150px; object-fit: contain; background: #0B1220; display: block; }
+    .ann-meta { padding: 8px 10px; font-size: 12px; }
     .ann-meta .muted { font-size: 11px; }
-    .stat-pill { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-    .stat-done { background: #D1FAE5; color: #047857; }
-    .stat-partial { background: #FEF3C7; color: #B45309; }
-    .stat-not_started { background: #FEE2E2; color: #B91C1C; }
+
+    .stat-pill { padding: 2px 9px; border-radius: var(--r-full); font-size: 11px; font-weight: 700; }
+    .stat-done { background: var(--success-soft); color: var(--success); }
+    .stat-partial { background: var(--warning-soft); color: var(--warning); }
+    .stat-not_started { background: var(--danger-soft); color: #991B1B; }
+    .pat-filter { min-height: 32px; padding: 4px 14px; font-size: 12.5px; border-radius: var(--r-full); }
     .pat-filter[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+
     /* Flash messages float over the page so they're visible from any scroll position. */
-    #flash { position: fixed; top: 72px; right: 16px; z-index: 10000; width: min(420px, calc(100vw - 32px)); }
-    #flash .alert { box-shadow: var(--shadow-md); margin-bottom: 8px; }
+    #flash { position: fixed; top: 70px; right: 16px; z-index: 10000; width: min(420px, calc(100vw - 32px)); }
+    #flash .alert { box-shadow: var(--shadow-lg); margin-bottom: 8px; }
+
     /* Section quick-nav for this long page. */
-    .section-nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .section-nav {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+        position: sticky;
+        top: 58px;
+        z-index: 30;
+        background: var(--bg);
+        padding: 10px 0;
+    }
     .section-nav a {
         font-size: 12px; font-weight: 600; color: var(--fg-muted);
         background: var(--surface); border: 1px solid var(--border);
-        border-radius: 999px; padding: 6px 12px; text-decoration: none;
+        border-radius: var(--r-full); padding: 6px 13px; text-decoration: none;
+        transition: color 0.15s ease, border-color 0.15s ease;
     }
-    .section-nav a:hover { color: var(--accent); border-color: var(--accent); text-decoration: none; }
-    .card[id] { scroll-margin-top: 84px; }
-    .danger-zone { border-color: #FECACA; }
-    .danger-zone h2 { color: #B91C1C; }
+    .section-nav a:hover { color: var(--accent); border-color: var(--accent-border); text-decoration: none; }
+    .card[id] { scroll-margin-top: 130px; }
+    .danger-zone { border-color: var(--danger-border); }
+    .danger-zone h2 { color: #991B1B; }
 </style>
-<header>
-    <h1>ColpAI &middot; Admin</h1>
-    <div class="user-bar">
-        <span>{{ user.username }} <span class="muted">(admin)</span></span>
-        <a href="/dashboard" class="btn secondary">Dashboard</a>
-        <a href="/review" class="btn secondary">Review</a>
-        <button class="secondary" onclick="logout()">Logout</button>
-    </div>
-</header>
 <main>
     <div id="flash"></div>
+
+    <div class="page-head">
+        <h1>Admin</h1>
+        <p>Manage users, upload images, track progress and export datasets.</p>
+    </div>
 
     <nav class="section-nav" aria-label="Page sections">
         <a href="#sec-add-user">Add user</a>
@@ -117,6 +160,7 @@
 
     <div class="card" id="sec-users">
         <h2>Users &amp; progress</h2>
+        <div class="table-wrap">
         <table>
             <thead>
                 <tr>
@@ -127,6 +171,7 @@
             </thead>
             <tbody id="userRows"><tr><td colspan="9" class="muted">Loading...</td></tr></tbody>
         </table>
+        </div>
     </div>
 
     <div class="card" id="sec-downloads">
@@ -164,12 +209,14 @@
             <button class="secondary pat-filter" data-filter="partial">Partial</button>
             <button class="secondary pat-filter" data-filter="done">Done</button>
         </div>
+        <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Patient</th><th>Dataset</th><th>Images</th><th>Annotated</th><th>Status</th><th>Action</th></tr>
+                <tr><th>Patient</th><th>Dataset</th><th>Images</th><th>Annotated</th><th>Status</th><th>Diagnosis</th><th>Action</th></tr>
             </thead>
-            <tbody id="patRows"><tr><td colspan="6" class="muted">Loading...</td></tr></tbody>
+            <tbody id="patRows"><tr><td colspan="7" class="muted">Loading...</td></tr></tbody>
         </table>
+        </div>
     </div>
 
     <div class="card" id="sec-browser">
@@ -205,7 +252,7 @@
 
 <div id="cropModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 9999; flex-direction: column; align-items: center; justify-content: center;">
     <div style="background: var(--surface); padding: 20px; border-radius: 12px; width: 90vw; max-width: 800px; display: flex; flex-direction: column; gap: 16px; box-shadow: var(--shadow-md);">
-        <h3 style="margin: 0; color: var(--fg); font-family: var(--font-heading);">Crop image</h3>
+        <h3 style="margin: 0; color: var(--fg); font-family: var(--font-heading);">Crop image <span style="font-weight: normal; font-size: 13px; color: var(--fg-muted);">(saved as 512&times;512 for training)</span></h3>
         <p class="muted" style="margin: 0;">This permanently overwrites the original image and deletes any existing annotations for it.</p>
         <div style="flex: 1; height: 60vh; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center;">
             <img id="cropTargetImage" style="max-width: 100%; max-height: 100%; display: block;" src="">
@@ -478,7 +525,7 @@ async function loadAnnotated() {
                 </a>
                 <div class="ann-meta">
                     <strong>${esc(a.patient_code || '(no patient)')}</strong>
-                    <div class="muted">${esc(a.impression || 'no impression')} &middot; ${a.region_count} region(s)</div>
+                    <div class="muted">${esc(a.image_phase || 'unknown type')} &middot; ${a.region_count} region(s)</div>
                     <div class="muted">${esc(a.annotator)}</div>
                 </div>
             </div>`).join('');
@@ -575,7 +622,7 @@ function renderPatients() {
     const tbody = document.getElementById('patRows');
     const rows = patFilter === 'all' ? patAll : patAll.filter(p => p.status === patFilter);
     if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="muted">No patients.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="muted">No patients.</td></tr>';
         return;
     }
     tbody.innerHTML = rows.map(p => `
@@ -585,6 +632,7 @@ function renderPatients() {
             <td>${p.total_images}</td>
             <td>${p.annotated_images} / ${p.total_images}</td>
             <td><span class="stat-pill stat-${p.status}">${STATUS_LABEL[p.status]}</span></td>
+            <td>${p.consensus_label ? esc(p.consensus_label.join(', ')) : `${p.submitted_diagnoses || 0} submitted`}</td>
             <td><a class="btn secondary" style="padding:4px 10px; font-size:12px;" href="/annotate?patient=${encodeURIComponent(p.patient_code)}">Annotate</a></td>
         </tr>`).join('');
 }
@@ -598,7 +646,7 @@ async function loadPatients() {
         renderPatients();
     } catch (e) {
         document.getElementById('patRows').innerHTML =
-            `<tr><td colspan="6" class="muted">Could not load: ${esc(e.message)}</td></tr>`;
+            `<tr><td colspan="7" class="muted">Could not load: ${esc(e.message)}</td></tr>`;
     }
 }
 document.querySelectorAll('.pat-filter').forEach(btn => {
@@ -642,6 +690,7 @@ function openCropModal(imageId, imageUrl) {
         cropperInstance = new Cropper(imgEl, {
             viewMode: 1,
             dragMode: 'crop',
+            aspectRatio: 1,        // standard square crop for model training
             autoCropArea: 0.8,
             restore: false,
             guides: true,

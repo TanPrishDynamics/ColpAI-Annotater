@@ -37,13 +37,7 @@ def build_yolo_zip(selection: ExportSelection) -> bytes:
 
             lines: list[str] = []
             for region in ann.regions:
-                if region.lesion_label:
-                    label_val = region.lesion_label.value
-                elif ann.colposcopic_impression:
-                    label_val = ann.colposcopic_impression[0]
-                else:
-                    label_val = None
-
+                label_val = region.lesion_label.value if region.lesion_label else None
                 if not label_val or label_val not in class_id:
                     continue
                 bbox = geo.region_bbox(region)

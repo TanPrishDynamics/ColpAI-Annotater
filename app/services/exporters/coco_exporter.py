@@ -8,8 +8,7 @@ Emits a single COCO JSON object:
   RLE dict for mask regions, and a 4-point box polygon for bbox regions.
 - ``categories``  the fixed diagnosis label set (stable ids across exports).
 
-A region's category is its ``lesion_label``; if unset it falls back to the
-image-level ``colposcopic_impression``. Regions with neither are skipped.
+A region's category is its ``lesion_label``. Regions without one are skipped.
 """
 from __future__ import annotations
 
@@ -44,19 +43,10 @@ def build_coco(selection: ExportSelection) -> dict:
             'height': image.height_px,
             'sha256': image.sha256,
             'dataset_source': image.dataset_source,
-            'colposcopic_impression': (
-                ", ".join(ann.colposcopic_impression) if ann.colposcopic_impression else None
-            ),
         })
 
         for region in ann.regions:
-            if region.lesion_label:
-                label_val = region.lesion_label.value
-            elif ann.colposcopic_impression:
-                label_val = ann.colposcopic_impression[0]
-            else:
-                label_val = None
-
+            label_val = region.lesion_label.value if region.lesion_label else None
             if label_val is None:
                 continue  # nothing to categorise this region as
             category_id = cat_id.get(label_val)

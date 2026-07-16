@@ -105,6 +105,50 @@ class DiagnosisLabel(str, Enum):
     EROSION = 'EROSION'
 
 
+class CytologyResult(str, Enum):
+    """Referral cervical cytology (Pap smear), Bethesda System categories."""
+    NILM = 'NILM'                     # Negative for intraepithelial lesion or malignancy
+    ASC_US = 'ASC_US'                 # Atypical squamous cells of undetermined significance
+    LSIL = 'LSIL'                     # Low-grade squamous intraepithelial lesion
+    ASC_H = 'ASC_H'                   # Atypical squamous cells, cannot exclude HSIL
+    HSIL = 'HSIL'                     # High-grade squamous intraepithelial lesion
+    AGC = 'AGC'                       # Atypical glandular cells
+    AIS = 'AIS'                       # Endocervical adenocarcinoma in situ
+    SCC = 'SCC'                       # Squamous cell carcinoma
+    unsatisfactory = 'unsatisfactory'
+
+
+class HPVStatus(str, Enum):
+    negative = 'negative'
+    positive_16_18 = 'positive_16_18'          # high-risk HPV 16/18
+    positive_other_hr = 'positive_other_hr'    # other high-risk type
+    positive_unknown = 'positive_unknown'      # positive, type not specified
+    not_done = 'not_done'
+
+
+class ManagementRecommendation(str, Enum):
+    routine_recall = 'routine_recall'
+    repeat_cytology = 'repeat_cytology'
+    colposcopy_followup = 'colposcopy_followup'
+    biopsy = 'biopsy'
+    excision_leep = 'excision_leep'            # LEEP/LLETZ/cone excision
+    refer_oncology = 'refer_oncology'
+
+
+class IFCPCGrade(str, Enum):
+    """IFCPC 2011 per-view colposcopic finding summary."""
+    normal = 'normal'
+    minor = 'minor'                            # grade 1 (minor) findings
+    major = 'major'                            # grade 2 (major) findings
+    suspicious_invasion = 'suspicious_invasion'
+    miscellaneous = 'miscellaneous'            # e.g. condyloma, polyp, inflammation
+
+
+class ColposcopyAdequacy(str, Enum):
+    adequate = 'adequate'
+    inadequate = 'inadequate'
+
+
 class AnnotationStatus(str, Enum):
     draft = 'draft'
     submitted = 'submitted'

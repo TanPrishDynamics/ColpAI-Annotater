@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% from "_nav.html" import navbar %}
+{% block title %}Patients - ColpAI{% endblock %}
+{% block body %}
+{{ navbar(user, active='patients') }}
+<style>
+    main { max-width: 760px; }
+    .pat-toolbar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 16px;
+    }
+    .pat-search { position: relative; flex: 1; }
+    .pat-search svg {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--fg-faint);
+        pointer-events: none;
+    }
+    .pat-search input { padding-left: 36px; }
+    .pat-count { font-size: 13px; color: var(--fg-muted); white-space: nowrap; }
+
+    .pat-card {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 14px 18px;
+        border-radius: var(--r-md);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        margin-bottom: 10px;
+        box-shadow: var(--shadow-sm);
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .pat-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+    .pat-card .info { flex: 1; min-width: 0; }
+    .pat-card .code {
+        font-family: var(--font-heading);
+        font-weight: 700;
+        font-size: 15px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .pat-card .meta { font-size: 12.5px; color: var(--fg-muted); margin: 3px 0 8px; font-variant-numeric: tabular-nums; }
+    .pat-card .progress-track { max-width: 260px; }
+    .dx-pill { border: none; }
+    .dx-pill.submitted { background: var(--success-soft); color: var(--success); }
+    .dx-pill.draft { background: var(--warning-soft); color: var(--warning); }
+</style>
+<main>
+    <div class="page-head">
+        <h1>Patients</h1>
+        <p>Annotation works one patient at a time. Pick a patient to annotate their images,
+           then enter the patient's final diagnosis once every image is done.</p>
+    </div>
+    <div class="pat-toolbar">
+        <div class="pat-search">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="search" id="patSearch" placeholder="Search patient code…" aria-label="Search patients" autocomplete="off">
+        </div>
+        <span class="pat-count" id="patCount"></span>
+    </div>
+    <div id="patientList">
+        <div class="skel" style="height: 76px; margin-bottom: 10px;"></div>
+        <div class="skel" style="height: 76px; margin-bottom: 10px;"></div>
+        <div class="skel" style="height: 76px;"></div>
+    </div>
+</main>
+<script src="{{ url_for('static', filename='js/patients_index.js') }}"></script>
+{% endblock %}

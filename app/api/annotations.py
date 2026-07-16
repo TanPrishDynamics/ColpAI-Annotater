@@ -25,7 +25,6 @@ from app.schemas.annotation import (
     AnnotationCreate,
     AnnotationListQuery,
     AnnotationPatch,
-    AnnotationSubmit,
     DiscardRequest,
 )
 from app.services import storage
@@ -69,21 +68,14 @@ def _apply_blocks(ann: ImageAnnotation, payload) -> None:
             value = getattr(f, field)
             if value is not None:
                 setattr(ann, field, value)
-    if payload.scoring is not None:
-        s = payload.scoring
-        for field in ('reid_margin', 'reid_color', 'reid_vessels', 'reid_iodine',
-                      'swede_aceto', 'swede_margin', 'swede_vessels', 'swede_size', 'swede_iodine'):
+    if payload.assessment is not None:
+        s = payload.assessment
+        for field in ('ifcpc_grade', 'colposcopy_adequacy'):
             value = getattr(s, field)
             if value is not None:
                 setattr(ann, field, value)
-    if payload.diagnosis is not None:
-        d = payload.diagnosis
-        if d.colposcopic_impression is not None:
-            ann.colposcopic_impression = [v.value for v in d.colposcopic_impression]
-        for field in ('histopathology_result', 'confidence', 'notes'):
-            value = getattr(d, field)
-            if value is not None:
-                setattr(ann, field, value)
+    if payload.notes is not None:
+        ann.notes = payload.notes
     if payload.crop_box is not None:
         c = payload.crop_box
         if c.w <= 0 or c.h <= 0:
@@ -321,19 +313,13 @@ def submit(annotation_id: str):
             status=409,
         )
 
-    # Final autosave-like merge before validating.
+    # Final autosave-like merge before submitting. Per-image diagnosis is optional
+    # (the FINAL diagnosis lives at the patient level, see app/api/patients.py), so
+    # there's nothing left to require here beyond a valid patch shape.
     body = request.get_json(silent=True) or {}
     if body:
         patch = AnnotationPatch.model_validate(body)
         _apply_blocks(ann, patch)
-
-    # Re-validate the merged row against the submit schema.
-    AnnotationSubmit.model_validate({
-        'diagnosis': {
-            'colposcopic_impression': ann.colposcopic_impression or [],
-            'confidence': ann.confidence,
-        },
-    })
 
     ann.status = AnnotationStatus.submitted
     ann.submitted_at = _utcnow()

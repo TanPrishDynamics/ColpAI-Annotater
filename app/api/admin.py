@@ -22,7 +22,7 @@ from werkzeug.utils import secure_filename
 
 from app.api.errors import error_response
 from app.extensions import db
-from app.models import ConsensusLabel, DiscardedImage, Image, ImageAnnotation, User
+from app.models import DiscardedImage, Image, ImageAnnotation, PatientConsensus, PatientDiagnosis, User
 from app.models.enums import AnnotationStatus, UserRole
 from app.schemas.admin import UserCreate, UserUpdate
 from app.services import storage
@@ -273,7 +273,6 @@ def _delete_images(images: list[Image]) -> dict:
             current_app.logger.warning("delete blob failed for %s: %s", img.source_path, e)
             blobs_missing += 1
 
-        ConsensusLabel.query.filter_by(image_id=img.id).delete(synchronize_session=False)
         DiscardedImage.query.filter_by(image_id=img.id).delete(synchronize_session=False)
         db.session.delete(img)  # annotations + regions cascade
 
@@ -298,6 +297,8 @@ def delete_patient(patient_code: str):
         return error_response('not_found', f'No images for {patient_code}.', status=404)
 
     summary = _delete_images(images)
+    PatientDiagnosis.query.filter_by(patient_code=patient_code).delete(synchronize_session=False)
+    PatientConsensus.query.filter_by(patient_code=patient_code).delete(synchronize_session=False)
     db.session.commit()
     current_app.logger.info("deleted patient %s: %s", patient_code, summary)
     return jsonify({'patient_code': patient_code, **summary})
@@ -319,10 +320,19 @@ def delete_image(image_id: str):
     db.session.commit()
     return jsonify({'image_id': image_id, **summary})
 
+# Every admin crop is written as a fixed square tile so the training set is uniform.
+TRAINING_CROP_SIZE = 512
+
+
 @bp.post('/images/<image_id>/crop')
 @login_required
 def crop_image(image_id: str):
-    """Crop the original image in place and delete existing annotations."""
+    """Crop the original image in place and delete existing annotations.
+
+    The crop is standardized to a fixed ``TRAINING_CROP_SIZE`` x ``TRAINING_CROP_SIZE``
+    square (1:1, then resized) so every stored image has identical dimensions for
+    model training.
+    """
     guard = _require_admin()
     if guard is not None:
         return guard
@@ -342,9 +352,15 @@ def crop_image(image_id: str):
         h = int(payload['height'])
     except (KeyError, TypeError, ValueError):
         return error_response('invalid_request', 'Invalid crop coordinates.', status=400)
-    
+
     if w <= 0 or h <= 0:
         return error_response('invalid_request', 'Crop dimensions must be positive.', status=400)
+
+    # Standardize every crop to a square (1:1). The UI already locks the aspect
+    # ratio, but force it here too so the stored training image is always NxN
+    # regardless of client rounding. Anchored at the top-left of the selection.
+    side = min(w, h)
+    w = h = side
 
     try:
         with storage.open_image(img.source_path) as fh:
@@ -359,10 +375,18 @@ def crop_image(image_id: str):
                 if right <= left or bottom <= top:
                     return error_response('invalid_request', 'Crop area outside image bounds.', status=400)
 
+                # Re-square after clamping (a box grazing the image edge can lose its
+                # 1:1 ratio), so the resize to the fixed tile never distorts.
+                clamped_side = min(right - left, bottom - top)
+                right = left + clamped_side
+                bottom = top + clamped_side
+
                 cropped = pil_img.crop((left, top, right, bottom))
                 if cropped.mode not in ('RGB', 'L'):
                     cropped = cropped.convert('RGB')
-                
+                # Standardize to a fixed square training tile.
+                cropped = cropped.resize((TRAINING_CROP_SIZE, TRAINING_CROP_SIZE), PILImage.LANCZOS)
+
                 out = io.BytesIO()
                 fmt = pil_img.format or 'JPEG'
                 cropped.save(out, format=fmt)
@@ -392,10 +416,14 @@ def crop_image(image_id: str):
     img.height_px = cropped.height
     img.file_size_bytes = new_size
 
-    ImageAnnotation.query.filter_by(image_id=img.id).delete(synchronize_session=False)
-    ConsensusLabel.query.filter_by(image_id=img.id).delete(synchronize_session=False)
+    # Re-cropping invalidates existing annotations (coordinates no longer match).
+    # Delete them via the ORM so the delete-orphan cascade removes their regions
+    # and review_actions too -- a bulk query.delete() skips that cascade and trips
+    # the regions FK on Postgres.
+    for ann in ImageAnnotation.query.filter_by(image_id=img.id).all():
+        db.session.delete(ann)
     DiscardedImage.query.filter_by(image_id=img.id).delete(synchronize_session=False)
-    
+
     db.session.commit()
 
     return jsonify({'message': 'Image cropped and reset successfully', 'image': img.to_dict()})
@@ -433,7 +461,7 @@ def list_annotated():
         'image_id': img.id,
         'patient_code': img.patient_code,
         'dataset_source': img.dataset_source,
-        'impression': ", ".join(ann.colposcopic_impression) if ann.colposcopic_impression else None,
+        'image_phase': img.image_phase.value if img.image_phase else None,
         'region_count': len(ann.regions),
         'annotator': user.full_name or user.username,
         'submitted_at': ann.submitted_at.isoformat() if ann.submitted_at else None,
@@ -474,6 +502,16 @@ def list_patients():
         .all()
     )
 
+    diagnosis_counts = dict(
+        db.session.query(PatientDiagnosis.patient_code, func.count(PatientDiagnosis.id))
+        .filter(PatientDiagnosis.status == AnnotationStatus.submitted)
+        .group_by(PatientDiagnosis.patient_code)
+        .all()
+    )
+    consensus_labels = dict(
+        db.session.query(PatientConsensus.patient_code, PatientConsensus.label).all()
+    )
+
     items = []
     summary = {'done': 0, 'partial': 0, 'not_started': 0}
     for code, dataset, total, annotated in rows:
@@ -490,6 +528,8 @@ def list_patients():
             'total_images': total,
             'annotated_images': annotated,
             'status': status,
+            'submitted_diagnoses': diagnosis_counts.get(code, 0),
+            'consensus_label': consensus_labels.get(code),
         })
 
     return jsonify({'items': items, 'count': len(items), 'summary': summary})

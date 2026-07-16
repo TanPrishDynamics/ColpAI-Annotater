@@ -3,15 +3,15 @@
 
 (() => {
     const LABEL_COLOR = {
-        NORMAL: '#2e9a5a',
-        CIN1: '#c9a531',
-        CIN2: '#cf7a31',
-        CIN3: '#c84a3a',
-        AIS: '#8a4fbf',
-        INVASIVE_CANCER: '#7a1f1f',
-        INFLAMMATION: '#d65db1',
-        INFECTION: '#00a3a3',
-        EROSION: '#b5651d',
+        NORMAL: '#059669',
+        CIN1: '#D97706',
+        CIN2: '#EA580C',
+        CIN3: '#DC2626',
+        AIS: '#7C3AED',
+        INVASIVE_CANCER: '#881337',
+        INFLAMMATION: '#DB2777',
+        INFECTION: '#0891B2',
+        EROSION: '#B45309',
     };
 
     const state = {
@@ -63,14 +63,12 @@
             return;
         }
         queueList.innerHTML = state.queue.map((a, i) => {
-            const dxArray = a.diagnosis?.colposcopic_impression || [];
-            const dx = dxArray.length > 0 ? dxArray.join(', ') : '(no dx)';
-            const color = LABEL_COLOR[dx] || '#7aa3ff';
+            const label = a.patient_code || a.image_phase || '(no patient)';
             return `
                 <div class="queue-item" data-idx="${i}" aria-selected="${i === state.index ? 'true' : 'false'}">
                     <img src="/api/v1/images/${a.image_id}/file" alt="" loading="lazy" onerror="this.style.background='#000'">
                     <div>
-                        <div class="label" style="color:${color}">${dx}</div>
+                        <div class="label">${label}</div>
                         <div class="meta">v${a.version} - ${a.submitted_at ? new Date(a.submitted_at).toLocaleString() : '-'}</div>
                     </div>
                 </div>`;
@@ -106,36 +104,22 @@
         return `<div class="kv">${rows.map(([k, v]) => `<div class="k">${k}</div><div class="v">${v ?? '<span class="muted">-</span>'}</div>`).join('')}</div>`;
     }
 
-    function reidInterp(t) {
-        if (t == null) return '';
-        if (t <= 2) return ' — Likely CIN 1';
-        if (t <= 4) return ' — Overlapping CIN 1–2';
-        return ' — Likely CIN 2–3';
-    }
-    function swedeInterp(t) {
-        if (t == null) return '';
-        if (t <= 4) return ' — Likely low-grade';
-        if (t <= 7) return ' — Intermediate';
-        return ' — Likely high-grade';
-    }
-
     function renderAnnotation(ann) {
         const q = ann.quality || {};
         const a = ann.anatomy || {};
         const f = ann.features || {};
-        const d = ann.diagnosis || {};
-        const sc = ann.scoring || {};
+        const asmt = ann.assessment || {};
         const regionCount = (ann.regions || []).length;
 
         sidePanel.innerHTML = `
             <div class="group">
-                <h4>Diagnosis</h4>
+                <h4>Patient</h4>
                 ${kv([
-                    ['Impression', dxBadge(d.colposcopic_impression ? d.colposcopic_impression.join(', ') : null)],
-                    ['Histopath', d.histopathology_result || '<span class="muted">-</span>'],
-                    ['Confidence', d.confidence != null ? `${d.confidence}/5` : '-'],
-                    ['Notes', d.notes ? escapeHtml(d.notes) : '<span class="muted">-</span>'],
+                    ['Code', ann.patient_code || '<span class="muted">(none)</span>'],
+                    ['Image type', ann.image_phase || '-'],
+                    ['Notes', ann.notes ? escapeHtml(ann.notes) : '<span class="muted">-</span>'],
                 ])}
+                ${ann.patient_code ? `<div style="margin-top:8px;"><a href="/patients/${encodeURIComponent(ann.patient_code)}/diagnose">View patient's FINAL diagnosis &rarr;</a></div>` : ''}
             </div>
             <div class="group">
                 <h4>Regions (${regionCount})</h4>
@@ -178,23 +162,10 @@
                 ])}
             </div>
             <div class="group">
-                <h4>Colposcopic scoring</h4>
+                <h4>IFCPC assessment</h4>
                 ${kv([
-                    ['Reid index', sc.reid_total != null
-                        ? `<strong>${sc.reid_total}/8</strong>${reidInterp(sc.reid_total)}`
-                        : '<span class="muted">incomplete</span>'],
-                    ['· Margin', sc.reid_margin],
-                    ['· Colour', sc.reid_color],
-                    ['· Vessels', sc.reid_vessels],
-                    ['· Iodine', sc.reid_iodine],
-                    ['Swede score', sc.swede_total != null
-                        ? `<strong>${sc.swede_total}/10</strong>${swedeInterp(sc.swede_total)}`
-                        : '<span class="muted">incomplete</span>'],
-                    ['· Aceto', sc.swede_aceto],
-                    ['· Margin', sc.swede_margin],
-                    ['· Vessels', sc.swede_vessels],
-                    ['· Size', sc.swede_size],
-                    ['· Iodine', sc.swede_iodine],
+                    ['Grade', asmt.ifcpc_grade],
+                    ['Adequacy', asmt.colposcopy_adequacy],
                 ])}
             </div>
         `;
@@ -278,6 +249,23 @@
     }
     window.addEventListener('resize', () => state.imageDims && positionOverlay());
 
+    function toast(msg) {
+        let el = document.getElementById('reviewToast');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'reviewToast';
+            el.style.cssText = 'position:fixed; bottom:20px; left:50%; transform:translateX(-50%); '
+                + 'background:#14232E; color:#fff; padding:11px 18px; border-radius:10px; font-size:13px; '
+                + 'z-index:9999; max-width:90vw; box-shadow:0 8px 24px rgba(10,25,38,0.35); '
+                + 'transition:opacity 0.25s ease;';
+            document.body.appendChild(el);
+        }
+        el.textContent = msg;
+        el.style.opacity = '1';
+        clearTimeout(el._t);
+        el._t = setTimeout(() => { el.style.opacity = '0'; }, 4000);
+    }
+
     async function recordAction(action) {
         if (state.index < 0) return;
         const ann = state.queue[state.index];
@@ -285,10 +273,13 @@
         approveBtn.disabled = true;
         rejectBtn.disabled = true;
         try {
-            await api(`/api/v1/review/${ann.id}/${action}`, {
+            const res = await api(`/api/v1/review/${ann.id}/${action}`, {
                 method: 'POST',
                 body: JSON.stringify({comment}),
             });
+            if (res && res.reopened_patient) {
+                toast(`Rejected — patient ${res.reopened_patient} returned to the annotator to redo & re-submit.`);
+            }
             state.queue.splice(state.index, 1);
             if (state.index >= state.queue.length) state.index = state.queue.length - 1;
             renderQueue();

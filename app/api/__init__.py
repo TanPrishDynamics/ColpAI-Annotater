@@ -5,6 +5,7 @@ from app.api.auth import bp as auth_bp
 from app.api.dashboard import bp as dashboard_bp
 from app.api.export import bp as export_bp
 from app.api.images import bp as images_bp
+from app.api.patients import bp as patients_bp
 from app.api.regions import annotation_regions_bp, regions_bp
 from app.api.review import bp as review_bp
 
@@ -15,6 +16,7 @@ def register_blueprints(app):
     app.register_blueprint(annotations_bp)
     app.register_blueprint(annotation_regions_bp)
     app.register_blueprint(regions_bp)
+    app.register_blueprint(patients_bp)
     app.register_blueprint(review_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(export_bp)

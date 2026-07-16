@@ -52,13 +52,7 @@ def render_overlay(image_row, annotation) -> PILImage.Image | None:
     font = _load_font()
 
     for region in annotation.regions:
-        if region.lesion_label:
-            label_val = region.lesion_label.value
-        elif annotation.colposcopic_impression:
-            label_val = annotation.colposcopic_impression[0]
-        else:
-            label_val = None
-            
+        label_val = region.lesion_label.value if region.lesion_label else None
         color = _color_for(label_val)
         name = label_val if label_val else 'unlabeled'
         _draw_region(draw, overlay, region, color, name, font, w, h)

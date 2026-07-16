@@ -12,7 +12,7 @@ from app.api.errors import error_response
 from app.extensions import db
 from app.models import Image, ImageAnnotation
 from app.models.enums import AnnotationStatus, ImagePhase
-from app.schemas.image import ImageQueueQuery, ImageOut, ImageQueueResponse
+from app.schemas.image import ImagePhasePatch, ImageQueueQuery, ImageOut, ImageQueueResponse
 from app.services import storage
 
 bp = Blueprint('images', __name__, url_prefix='/api/v1/images')
@@ -117,6 +117,25 @@ def get_image(image_id: str):
     return jsonify(ImageOut(**img.to_dict()).model_dump())
 
 
+@bp.patch('/<image_id>')
+@login_required
+def patch_image(image_id: str):
+    """Correct the image type (baseline/acetic-acid/Lugol's-iodine/green-filter).
+
+    `image_phase` is auto-guessed from the filename at ingest and is often wrong
+    or unset; any annotator can correct it here. It's a property of the shared
+    Image row, not of one annotator's own annotation.
+    """
+    img = db.session.get(Image, image_id)
+    if img is None:
+        return error_response('not_found', 'Image not found.', status=404)
+
+    payload = ImagePhasePatch.model_validate(request.get_json(silent=True) or {})
+    img.image_phase = payload.image_phase
+    db.session.commit()
+    return jsonify(ImageOut(**img.to_dict()).model_dump())
+
+
 @bp.get('/<image_id>/file')
 @login_required
 def serve_image_file(image_id: str):
@@ -157,18 +176,16 @@ def list_datasets():
 def list_patients():
     """Distinct patient codes with how many images the current user still has to do.
 
-    ``remaining`` = images in the patient that the user hasn't submitted (or better)
-    yet, so the annotate page can let a doctor pick a patient and see what's left.
+    ``remaining`` = images in the patient the user hasn't annotated yet. There's no
+    per-image submit anymore (images are finalized in bulk when the patient diagnosis
+    is submitted), so an image counts as done once the user has *any* live annotation
+    on it -- a draft is enough. That keeps the picker's progress meaningful while the
+    annotator works through a patient, before the final diagnosis is submitted.
     """
-    submitted_like = (
-        AnnotationStatus.submitted,
-        AnnotationStatus.reviewed,
-        AnnotationStatus.consensus,
-    )
     mine_done = case(
         (and_(
             ImageAnnotation.annotator_id == current_user.id,
-            ImageAnnotation.status.in_(submitted_like),
+            ImageAnnotation.status != AnnotationStatus.superseded,
         ), Image.id),
         else_=None,
     )

@@ -1,0 +1,436 @@
+{% extends "base.html" %}
+{% from "_nav.html" import navbar %}
+{% block title %}Diagnose {{ patient_code }} - ColpAI{% endblock %}
+{% block body %}
+{{ navbar(user, active='patients') }}
+<style>
+    .page-bar {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+    }
+    .page-bar h1 {
+        margin: 0;
+        font-size: 21px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .page-bar .spacer { flex: 1; }
+    .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--fg-muted);
+    }
+    .back-link:hover { color: var(--accent); text-decoration: none; }
+
+    .diag-shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 400px;
+        gap: 18px;
+        align-items: start;
+    }
+    @media (max-width: 960px) { .diag-shell { grid-template-columns: 1fr; } }
+
+    .image-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 12px;
+    }
+    .img-card {
+        background: var(--surface-2);
+        border-radius: var(--r-md);
+        overflow: hidden;
+        text-decoration: none;
+        color: inherit;
+        display: block;
+        border: 1px solid var(--border);
+        transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+        position: relative;
+    }
+    .img-card:hover {
+        box-shadow: var(--shadow-md);
+        border-color: var(--border-strong);
+        text-decoration: none;
+        transform: translateY(-1px);
+    }
+    .img-card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: #0B1220; }
+    .img-card .chip {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: white;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .chip.submitted, .chip.reviewed, .chip.consensus { background: var(--success); }
+    .chip.draft { background: #D97706; }
+    .chip.none { background: #64748B; }
+    .img-card.rejected { border-color: var(--danger); box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.25); }
+    .img-card .reject-flag {
+        position: absolute;
+        bottom: 6px;
+        right: 6px;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 3px 7px;
+        border-radius: var(--r-full);
+        color: white;
+        background: var(--danger);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .img-card .type-chip {
+        position: absolute;
+        bottom: 6px;
+        left: 6px;
+        font-size: 10px;
+        font-weight: 600;
+        padding: 3px 7px;
+        border-radius: var(--r-full);
+        color: white;
+        background: rgba(8, 20, 30, 0.72);
+        backdrop-filter: blur(2px);
+    }
+
+    .dx-category { margin-bottom: 12px; }
+    .dx-category-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        font-weight: 700;
+        margin-bottom: 6px;
+        letter-spacing: 0.06em;
+        color: var(--fg-muted);
+    }
+    .diagnosis-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
+    .dx-btn {
+        background: var(--surface);
+        color: var(--fg);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--r-md);
+        padding: 10px 6px;
+        min-height: 42px;
+        font-size: 12.5px;
+        cursor: pointer;
+        text-align: center;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        transition: all 0.15s ease;
+        box-shadow: none;
+    }
+    .dx-btn:hover { background: var(--surface-2); border-color: var(--fg-faint); color: var(--fg); }
+    .dx-btn[aria-pressed="true"] { background: var(--accent); color: white; border-color: transparent; box-shadow: var(--shadow-sm); }
+    .dx-btn[aria-pressed="true"]::after { content: ' ✓'; font-weight: bold; }
+    .dx-btn[data-dx="NORMAL"][aria-pressed="true"] { background: #059669; }
+    .dx-btn[data-dx="CIN1"][aria-pressed="true"] { background: #D97706; }
+    .dx-btn[data-dx="CIN2"][aria-pressed="true"] { background: #EA580C; }
+    .dx-btn[data-dx="CIN3"][aria-pressed="true"] { background: #DC2626; }
+    .dx-btn[data-dx="AIS"][aria-pressed="true"] { background: #7C3AED; }
+    .dx-btn[data-dx="INVASIVE_CANCER"][aria-pressed="true"] { background: #881337; }
+    .dx-btn[data-dx="INFLAMMATION"][aria-pressed="true"] { background: #DB2777; }
+    .dx-btn[data-dx="INFECTION"][aria-pressed="true"] { background: #0891B2; }
+    .dx-btn[data-dx="EROSION"][aria-pressed="true"] { background: #B45309; }
+
+    .form-section {
+        border-top: 1px solid var(--border);
+        margin-top: 18px;
+        padding-top: 16px;
+    }
+    .form-section-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: var(--fg-muted);
+        margin-bottom: 12px;
+    }
+
+    details.score-section {
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        background: var(--surface-2);
+        margin-bottom: 10px;
+    }
+    details.score-section > summary {
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        padding: 11px 14px;
+        font-weight: 600;
+        font-size: 13.5px;
+        border-radius: var(--r-md);
+    }
+    details.score-section > summary::-webkit-details-marker { display: none; }
+    details.score-section > summary::after {
+        content: '';
+        width: 8px;
+        height: 8px;
+        border-right: 2px solid var(--fg-muted);
+        border-bottom: 2px solid var(--fg-muted);
+        transform: rotate(45deg);
+        transition: transform 0.15s ease;
+        flex-shrink: 0;
+        margin-left: auto;
+    }
+    details.score-section[open] > summary::after { transform: rotate(225deg); margin-top: 4px; }
+    details.score-section > summary:hover { background: var(--surface-3); }
+    .score-body { padding: 2px 14px 14px; }
+    .score-body label { margin: 10px 0 4px; }
+    .score-total {
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        font-size: 13px;
+        color: var(--accent);
+        white-space: nowrap;
+    }
+    .score-interp { margin-top: 10px; font-size: 12px; }
+
+    fieldset { border: none; padding: 0; margin: 0; }
+    fieldset:disabled { opacity: 0.6; }
+    .submit-row { display: flex; gap: 10px; margin-top: 20px; }
+    .submit-row button { flex: 1; }
+    .check-inline { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--fg); font-weight: 400; margin-bottom: 0; cursor: pointer; }
+</style>
+<main>
+    <div class="page-bar">
+        <a class="back-link" href="/annotate?patient={{ patient_code|urlencode }}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+            Back to images
+        </a>
+        <h1>Patient {{ patient_code }}</h1>
+        <span class="pill" id="statusPill">Loading…</span>
+        <div class="spacer"></div>
+    </div>
+
+    <div class="diag-shell">
+        <div class="card">
+            <h2>Images <span class="muted" id="imageCount" style="font-weight:400; font-size:13px;"></span></h2>
+            <div class="image-grid" id="imageGrid">
+                <div class="skel" style="aspect-ratio: 1;"></div>
+                <div class="skel" style="aspect-ratio: 1;"></div>
+                <div class="skel" style="aspect-ratio: 1;"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Final diagnosis</h2>
+            <p class="card-sub">One diagnosis per annotator for this patient. Once submitted it can't be edited further.</p>
+            <fieldset id="dxForm">
+                <div class="field">
+                    <label>Colposcopic impression <span class="muted">(select all that apply)</span></label>
+                    <div id="dxGrid">
+                        <div class="dx-category">
+                            <div class="dx-category-title">Benign</div>
+                            <div class="diagnosis-grid">
+                                <button type="button" class="dx-btn" data-dx="NORMAL">NORMAL</button>
+                                <button type="button" class="dx-btn" data-dx="INFLAMMATION">INFLAMMATION</button>
+                                <button type="button" class="dx-btn" data-dx="INFECTION">INFECTION</button>
+                                <button type="button" class="dx-btn" data-dx="EROSION">EROSION</button>
+                            </div>
+                        </div>
+                        <div class="dx-category">
+                            <div class="dx-category-title">Pre-cancerous</div>
+                            <div class="diagnosis-grid">
+                                <button type="button" class="dx-btn" data-dx="CIN1">CIN1</button>
+                                <button type="button" class="dx-btn" data-dx="CIN2">CIN2</button>
+                                <button type="button" class="dx-btn" data-dx="CIN3">CIN3</button>
+                            </div>
+                        </div>
+                        <div class="dx-category">
+                            <div class="dx-category-title">Cancer</div>
+                            <div class="diagnosis-grid">
+                                <button type="button" class="dx-btn" data-dx="AIS">AIS</button>
+                                <button type="button" class="dx-btn" data-dx="INVASIVE_CANCER">INVASIVE</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="field">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label style="margin: 0;">Confidence</label>
+                        <span class="muted tabular" id="confidenceLabel">-</span>
+                    </div>
+                    <input type="range" id="confidence" min="1" max="5" value="3" aria-label="Diagnosis confidence, 1 to 5">
+                </div>
+
+                <div class="form-section">
+                    <div class="form-section-title">Pathology &amp; screening context</div>
+                    <div class="field">
+                        <label for="histopathology">Histopathology <span class="muted">(optional)</span></label>
+                        <select id="histopathology">
+                            <option value="">- not available -</option>
+                            <option value="NORMAL">NORMAL</option>
+                            <option value="CIN1">CIN1</option>
+                            <option value="CIN2">CIN2</option>
+                            <option value="CIN3">CIN3</option>
+                            <option value="AIS">AIS</option>
+                            <option value="INVASIVE_CANCER">INVASIVE_CANCER</option>
+                            <option value="INFLAMMATION">INFLAMMATION</option>
+                            <option value="INFECTION">INFECTION</option>
+                            <option value="EROSION">EROSION</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="cytology_result">Cytology (Pap) result <span class="muted">(optional)</span></label>
+                        <select id="cytology_result">
+                            <option value="">- not available -</option>
+                            <option value="NILM">NILM (negative)</option>
+                            <option value="ASC_US">ASC-US</option>
+                            <option value="LSIL">LSIL</option>
+                            <option value="ASC_H">ASC-H</option>
+                            <option value="HSIL">HSIL</option>
+                            <option value="AGC">AGC (atypical glandular)</option>
+                            <option value="AIS">AIS</option>
+                            <option value="SCC">SCC (squamous cell carcinoma)</option>
+                            <option value="unsatisfactory">Unsatisfactory</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="hpv_status">HPV status <span class="muted">(optional)</span></label>
+                        <select id="hpv_status">
+                            <option value="">- not available -</option>
+                            <option value="negative">Negative</option>
+                            <option value="positive_16_18">Positive &mdash; HPV 16/18</option>
+                            <option value="positive_other_hr">Positive &mdash; other high-risk</option>
+                            <option value="positive_unknown">Positive &mdash; type unknown</option>
+                            <option value="not_done">Not done</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="management_recommendation">Management recommendation <span class="muted">(optional)</span></label>
+                        <select id="management_recommendation">
+                            <option value="">- none -</option>
+                            <option value="routine_recall">Routine recall</option>
+                            <option value="repeat_cytology">Repeat cytology</option>
+                            <option value="colposcopy_followup">Colposcopy follow-up</option>
+                            <option value="biopsy">Biopsy</option>
+                            <option value="excision_leep">Excision (LEEP/LLETZ/cone)</option>
+                            <option value="refer_oncology">Refer to oncology</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="check-inline">
+                            <input type="checkbox" id="biopsy_taken"> Biopsy taken
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-section-title">Colposcopic scoring <span style="text-transform:none; letter-spacing:0; font-weight:400;">(optional)</span></div>
+                    <details class="score-section">
+                        <summary>Reid Colposcopic Index <span class="score-total" id="reidTotal">&ndash; / 8</span></summary>
+                        <div class="score-body">
+                            <label for="reid_margin">Margin</label>
+                            <select id="reid_margin">
+                                <option value="">-</option>
+                                <option value="0">0 &middot; Condylomatous/micropapillary; indistinct, feathered or jagged border; satellites</option>
+                                <option value="1">1 &middot; Regular lesion, smooth straight outline</option>
+                                <option value="2">2 &middot; Rolled/peeling edges; internal border (high-grade within low-grade)</option>
+                            </select>
+                            <label for="reid_color">Colour (acetowhite)</label>
+                            <select id="reid_color">
+                                <option value="">-</option>
+                                <option value="0">0 &middot; Shiny snow-white; indistinct/transient</option>
+                                <option value="1">1 &middot; Intermediate shiny grey-white</option>
+                                <option value="2">2 &middot; Dull oyster-grey</option>
+                            </select>
+                            <label for="reid_vessels">Vessels</label>
+                            <select id="reid_vessels">
+                                <option value="">-</option>
+                                <option value="0">0 &middot; Fine/uniform; poorly-formed punctation/mosaic; vessels beyond TZ</option>
+                                <option value="1">1 &middot; Absent vessels</option>
+                                <option value="2">2 &middot; Coarse punctation/mosaic, well-defined, widely spaced</option>
+                            </select>
+                            <label for="reid_iodine">Iodine staining</label>
+                            <select id="reid_iodine">
+                                <option value="">-</option>
+                                <option value="0">0 &middot; Iodine-positive (brown); or negative in minor lesion</option>
+                                <option value="1">1 &middot; Partial / variegated speckled uptake</option>
+                                <option value="2">2 &middot; Negative mustard-yellow in significant lesion</option>
+                            </select>
+                            <div class="score-interp muted" id="reidInterp"></div>
+                        </div>
+                    </details>
+
+                    <details class="score-section">
+                        <summary>Swede Score <span class="score-total" id="swedeTotal">&ndash; / 10</span></summary>
+                        <div class="score-body">
+                            <label for="swede_aceto">Acetowhite uptake</label>
+                            <select id="swede_aceto">
+                                <option value="">-</option>
+                                <option value="0">0 &middot; None or transparent</option>
+                                <option value="1">1 &middot; Thin / shady / milky</option>
+                                <option value="2">2 &middot; Distinct, opaque white (stearin)</option>
+                            </select>
+                            <label for="swede_margin">Margins &amp; surface</label>
+                            <select id="swede_margin">
+                                <option value="">-</option>
+                                <option value="0">0 &middot; Diffuse / indistinct</option>
+                                <option value="1">1 &middot; Sharp but irregular, jagged, geographic; satellites</option>
+                                <option value="2">2 &middot; Sharp &amp; even; surface-level difference (cuffing)</option>
+                            </select>
+                            <label for="swede_vessels">Vessels</label>
+                            <select id="swede_vessels">
+                                <option value="">-</option>
+                                <option value="0">0 &middot; Fine, regular</option>
+                                <option value="1">1 &middot; Absent</option>
+                                <option value="2">2 &middot; Coarse or atypical</option>
+                            </select>
+                            <label for="swede_size">Lesion size</label>
+                            <select id="swede_size">
+                                <option value="">-</option>
+                                <option value="0">0 &middot; &lt; 5 mm</option>
+                                <option value="1">1 &middot; 5&ndash;15 mm or 2 quadrants</option>
+                                <option value="2">2 &middot; &gt; 15 mm, 3&ndash;4 quadrants, or endocervically undefined</option>
+                            </select>
+                            <label for="swede_iodine">Iodine staining</label>
+                            <select id="swede_iodine">
+                                <option value="">-</option>
+                                <option value="0">0 &middot; Brown (iodine-positive)</option>
+                                <option value="1">1 &middot; Faintly or patchy yellow</option>
+                                <option value="2">2 &middot; Distinct yellow</option>
+                            </select>
+                            <div class="score-interp muted" id="swedeInterp"></div>
+                        </div>
+                    </details>
+                </div>
+
+                <div class="form-section">
+                    <div class="field" style="margin-bottom: 0;">
+                        <label for="notes">Notes</label>
+                        <textarea id="notes" rows="3" placeholder="Free-text observations…"></textarea>
+                    </div>
+                </div>
+
+                <div class="submit-row">
+                    <button type="button" class="secondary" id="saveBtn">Save draft</button>
+                    <button type="button" id="submitBtn">Submit diagnosis</button>
+                </div>
+            </fieldset>
+
+            <div id="consensusBox" style="margin-top: 20px; display: none;">
+                <div class="form-section" style="margin-top: 0;">
+                    <div class="form-section-title">Consensus</div>
+                    <div id="consensusContent" class="muted" style="font-size: 13px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+    window.PATIENT_CODE = {{ patient_code|tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/patient_diagnose.js') }}"></script>
+{% endblock %}

@@ -5,8 +5,11 @@
 - GET /api/v1/export/coco              - COCO detection/segmentation JSON
 - GET /api/v1/export/yolo              - YOLO labels + data.yaml (zip)
 - GET /api/v1/export/masks             - semantic-mask PNGs (zip)
+- GET /api/v1/export/patients          - submitted FINAL patient diagnoses + consensus (CSV)
 
-All accept ``?dataset=<source>&status=reviewed|submitted|all``.
+``summary``/``csv``/``coco``/``yolo``/``masks``/``bundle`` accept
+``?dataset=<source>&status=reviewed|submitted|all``. ``patients`` doesn't -- patient
+diagnoses aren't tied to an image/dataset selection.
 """
 from __future__ import annotations
 
@@ -122,6 +125,17 @@ def export_masks():
     sel = gather_export_selection(dataset_source=q.dataset, status=q.status)
     body = mask_exporter.build_mask_zip(sel)
     return _download(body, 'application/zip', _stamp('masks.zip', q))
+
+
+@bp.get('/patients')
+@login_required
+def export_patients():
+    guard = _require_exporter()
+    if guard is not None:
+        return guard
+    body = csv_exporter.export_patient_csv()
+    ts = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
+    return _download(body, 'text/csv', f'colpai_patients_{ts}.csv')
 
 
 @bp.get('/bundle')

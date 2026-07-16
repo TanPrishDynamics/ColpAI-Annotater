@@ -6,6 +6,7 @@ Produces one zip an admin can hand off whole::
     overlays/<image_id>.png      same images with annotations drawn on
     labels/annotations_image.csv per-image CSV
     labels/annotations_region.csv per-region CSV
+    labels/patients.csv          submitted FINAL patient diagnoses + consensus
     labels/coco.json             COCO detection/segmentation JSON
     manifest.csv                 image_id -> source path, label, file status
     README.txt                   what's inside
@@ -29,7 +30,7 @@ from app.services.exporters.selection import ExportSelection
 def build_bundle_zip(selection: ExportSelection) -> bytes:
     buf = io.BytesIO()
     manifest = [('image_id', 'dataset_source', 'source_path',
-                 'impression', 'region_count', 'original_included', 'overlay_included',
+                 'region_count', 'original_included', 'overlay_included',
                  'crop_included')]
 
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -42,7 +43,6 @@ def build_bundle_zip(selection: ExportSelection) -> bytes:
                 image.id,
                 image.dataset_source,
                 image.source_path,
-                ", ".join(ann.colposcopic_impression) if ann.colposcopic_impression else '',
                 len(ann.regions),
                 'yes' if original_ok else 'MISSING',
                 'yes' if overlay_ok else 'no',
@@ -52,6 +52,7 @@ def build_bundle_zip(selection: ExportSelection) -> bytes:
         # Label files alongside the pictures.
         zf.writestr('labels/annotations_image.csv', csv_exporter.export_image_csv(selection))
         zf.writestr('labels/annotations_region.csv', csv_exporter.export_region_csv(selection))
+        zf.writestr('labels/patients.csv', csv_exporter.export_patient_csv())
         zf.writestr('labels/coco.json', json.dumps(coco_exporter.build_coco(selection), indent=2))
 
         man_buf = io.StringIO()
@@ -101,7 +102,7 @@ def _readme(selection: ExportSelection, n: int) -> str:
         "  images/      original image files, named by image id\n"
         "  overlays/    the same images with annotations drawn on (color = diagnosis)\n"
         "  crops/       the annotator's crop region, where one was drawn\n"
-        "  labels/      annotations_image.csv, annotations_region.csv, coco.json\n"
+        "  labels/      annotations_image.csv, annotations_region.csv, patients.csv, coco.json\n"
         "  manifest.csv image id -> source path, label, and whether the file was found\n\n"
         "Any image whose source file was unavailable on the server is listed as\n"
         "MISSING in manifest.csv and omitted from images/ and overlays/.\n"

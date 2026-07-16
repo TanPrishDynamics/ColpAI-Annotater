@@ -1,4 +1,4 @@
-"""CLI: recompute the ConsensusLabel for every image with multiple submissions.
+"""CLI: recompute the patient consensus for every patient with multiple submitted diagnoses.
 
 Usage:
     python -m scripts.recompute_consensus
@@ -17,7 +17,7 @@ def main():
     with app.app_context():
         stats = consensus.recompute_all()
         click.echo(
-            f"Eligible images: {stats['eligible_images']} | "
+            f"Eligible patients: {stats['eligible_patients']} | "
             f"Consensus rows written: {stats['consensus_written']}"
         )
 

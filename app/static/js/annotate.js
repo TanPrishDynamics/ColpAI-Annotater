@@ -13,8 +13,6 @@
 // are kept in `state.nodes` keyed by region_id. The list/editor render from `state.regions`.
 
 (() => {
-    const DX_KEYS = ['NORMAL', 'CIN1', 'CIN2', 'CIN3', 'AIS', 'INVASIVE_CANCER',
-        'INFLAMMATION', 'INFECTION', 'EROSION'];
     const AUTOSAVE_MS = 800;
     const LABEL_COLOR = {
         NORMAL: '#2e9a5a',
@@ -34,7 +32,7 @@
         queue: [],
         queueCursor: null,
         queueIndex: -1,
-        patient: '',          // '' = all patients
+        patient: '',          // the annotate workbench is patient-first; always set except on a codeless deep link
         image: null,
         annotation: null,
         dirty: false,
@@ -1025,15 +1023,9 @@
         setPill('Saving region...', 'saving');
         try {
             await ensureAnnotation();
-            const selectedDx = Array.from(document.querySelectorAll('.dx-btn[aria-pressed="true"]')).map(b => b.dataset.dx);
-            let lesion_label = undefined;
-            const abnormalLabels = selectedDx.filter(d => ['CIN1', 'CIN2', 'CIN3', 'AIS', 'INVASIVE_CANCER'].includes(d));
-            if (abnormalLabels.length > 0) {
-                lesion_label = abnormalLabels[0];
-            }
             const created = await api(`/api/v1/annotations/${state.annotation.id}/regions`, {
                 method: 'POST',
-                body: JSON.stringify({region_type, geometry, lesion_label}),
+                body: JSON.stringify({region_type, geometry}),
             });
             state.regions.set(created.id, created);
             drawRegion(created);
@@ -1228,8 +1220,17 @@
     }
 
     // ---------- Queue navigation (unchanged logic from Phase 2) ----------
+    // When the patient's image queue is exhausted, jump straight to that patient's
+    // diagnosis page -- there's nothing left to annotate at the image level.
+    function goToPatientDiagnose() {
+        window.location.href = '/patients/' + encodeURIComponent(state.patient) + '/diagnose';
+    }
+
     function queueUrl(cursor) {
-        let url = '/api/v1/images?status=unannotated&limit=100';
+        // No status filter: nothing gets submitted per-image anymore, so the
+        // "queue" is simply every image for the patient, in a fixed order. Reaching
+        // past the last one means the patient's images are all done.
+        let url = '/api/v1/images?limit=100';
         if (state.patient) url += `&patient_code=${encodeURIComponent(state.patient)}`;
         if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
         return url;
@@ -1275,8 +1276,9 @@
                 state.queueCursor = data.next_cursor;
             }
             if (idx >= state.queue.length) {
+                if (state.patient) { goToPatientDiagnose(); return; }
                 setPill('Queue empty', '');
-                viewerEmpty.textContent = 'No more unannotated images in the queue.';
+                viewerEmpty.textContent = 'You have no unannotated images.';
                 viewerEmpty.dataset.show = 'true';
                 return;
             }
@@ -1295,62 +1297,24 @@
             <div><strong>Phase:</strong> ${img.image_phase || '-'}</div>
             <div><strong>Resolution:</strong> ${img.image_resolution || '-'}</div>
             <div><strong>Device:</strong> ${img.capture_device || '-'}</div>
+            ${img.patient_code ? `
+            <div style="margin-top: 8px;"><strong>Patient:</strong> ${img.patient_code}</div>
+            <div><a href="/patients/${encodeURIComponent(img.patient_code)}/diagnose">Diagnose patient &rarr;</a></div>
+            ` : ''}
         `;
     }
 
     // ---------- Form (Layer B) ----------
     function renderForm() {
         const ann = state.annotation;
-        const impression = ann?.diagnosis?.colposcopic_impression || [];
-        document.querySelectorAll('.dx-btn').forEach(btn => {
-            const picked = impression.includes(btn.dataset.dx);
-            btn.setAttribute('aria-pressed', picked ? 'true' : 'false');
-        });
-        const confVal = ann?.diagnosis?.confidence ?? 3;
-        document.getElementById('confidence').value = confVal;
-        document.getElementById('confidenceLabel').textContent = `${confVal} / 5`;
         document.querySelectorAll('[data-field]').forEach(el => {
             const path = el.dataset.field;
-            if (path === 'diagnosis.confidence') return;
             const val = getNested(ann, path);
             if (el.type === 'checkbox') el.checked = !!val;
             else el.value = val == null ? '' : String(val);
         });
-        updateScoreTotals();
-    }
-
-    // ---------- Reid / Swede scoring totals ----------
-    function interpretReid(t) {
-        if (t <= 2) return 'Likely CIN 1 (low-grade)';
-        if (t <= 4) return 'Overlapping CIN 1–2';
-        return 'Likely CIN 2–3 (high-grade)';
-    }
-    function interpretSwede(t) {
-        if (t <= 4) return 'Likely low-grade / benign';
-        if (t <= 7) return 'Intermediate';
-        return 'Likely high-grade (consider biopsy/treatment)';
-    }
-    function updateScoreTotals() {
-        const get = f => {
-            const el = document.querySelector(`[data-field="scoring.${f}"]`);
-            return (el && el.value !== '') ? Number(el.value) : null;
-        };
-        const sets = [
-            {parts: ['reid_margin', 'reid_color', 'reid_vessels', 'reid_iodine'],
-             max: 8, tot: 'reidTotal', intp: 'reidInterp', fn: interpretReid},
-            {parts: ['swede_aceto', 'swede_margin', 'swede_vessels', 'swede_size', 'swede_iodine'],
-             max: 10, tot: 'swedeTotal', intp: 'swedeInterp', fn: interpretSwede},
-        ];
-        for (const s of sets) {
-            const totEl = document.getElementById(s.tot);
-            const intpEl = document.getElementById(s.intp);
-            if (!totEl) continue;
-            const vals = s.parts.map(get);
-            const done = vals.every(v => v !== null);
-            const sum = vals.reduce((a, b) => a + (b || 0), 0);
-            totEl.textContent = done ? `${sum} / ${s.max}` : `– / ${s.max}`;
-            if (intpEl) intpEl.textContent = done ? s.fn(sum) : 'Score all criteria for a total.';
-        }
+        const typeSel = document.getElementById('imageTypeSelect');
+        if (typeSel) typeSel.value = state.image?.image_phase || '';
     }
 
     function collectPatchFromField(el) {
@@ -1402,7 +1366,7 @@
             });
             state.dirty = false;
             setPill('Saved', 'saved');
-            if (Object.keys(body).length && !body.diagnosis) {
+            if (Object.keys(body).length) {
                 showHUD('Saved ✓');
             }
         } catch (err) {
@@ -1412,49 +1376,33 @@
         }
     }
 
-    // Diagnosis buttons. Also flush the slider's current confidence so a fresh draft
-    // doesn't fail submit just because the user never touched the slider.
-    document.querySelectorAll('.dx-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const isPressed = btn.getAttribute('aria-pressed') === 'true';
-            btn.setAttribute('aria-pressed', !isPressed ? 'true' : 'false');
-            
-            const selectedDx = Array.from(document.querySelectorAll('.dx-btn[aria-pressed="true"]')).map(b => b.dataset.dx);
-            const confidence = Number(document.getElementById('confidence').value);
-            queueAutosave({diagnosis: {colposcopic_impression: selectedDx, confidence}});
-
-            // Smart Tool Switching
-            const hasAbnormal = selectedDx.some(d => ['CIN1', 'CIN2', 'CIN3', 'AIS', 'INVASIVE_CANCER'].includes(d));
-            if (hasAbnormal && state.tool === 'pan') {
-                const polyBtn = document.querySelector('#toolDock button[data-tool="polygon"]');
-                if (polyBtn) polyBtn.click();
-            }
-
-            // Dynamic UI
-            const isOnlyNormal = selectedDx.length === 1 && selectedDx[0] === 'NORMAL';
-            const regionsDetails = document.querySelector('#regionList').closest('details');
-            if (regionsDetails) {
-                if (hasAbnormal) regionsDetails.setAttribute('open', '');
-                else if (isOnlyNormal || selectedDx.length === 0) regionsDetails.removeAttribute('open');
-            }
-            const scoringTabBtn = document.querySelector('.tab-btn[onclick*="tab-scoring"]');
-            if (scoringTabBtn) {
-                scoringTabBtn.style.display = (selectedDx.length > 0 && !isOnlyNormal) ? '' : 'none';
-            }
-            
-            showHUD(selectedDx.join(', ') || 'None');
-        });
-    });
     document.querySelectorAll('[data-field]').forEach(el => {
         const evt = (el.tagName === 'SELECT' || el.type === 'checkbox') ? 'change' : 'input';
         el.addEventListener(evt, () => {
-            if (el.id === 'confidence') {
-                document.getElementById('confidenceLabel').textContent = `${el.value} / 5`;
-            }
-            if (el.dataset.field.startsWith('scoring.')) updateScoreTotals();
             queueAutosave(collectPatchFromField(el));
         });
     });
+
+    // Image type is a property of the shared Image row, not this annotation --
+    // saved immediately via its own endpoint, not the autosave debounce.
+    const imageTypeSelect = document.getElementById('imageTypeSelect');
+    if (imageTypeSelect) {
+        imageTypeSelect.addEventListener('change', async () => {
+            if (!state.image || !imageTypeSelect.value) return;
+            try {
+                const updated = await api(`/api/v1/images/${state.image.id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({image_phase: imageTypeSelect.value}),
+                });
+                state.image.image_phase = updated.image_phase;
+                renderMeta();
+                showHUD('Image type saved');
+            } catch (err) {
+                alert('Failed to save image type: ' + err.message);
+                imageTypeSelect.value = state.image.image_phase || '';
+            }
+        });
+    }
 
     // ---------- Brightness / contrast ----------
     function updateFilter() {
@@ -1503,13 +1451,22 @@
     });
 
     // ---------- Footer buttons ----------
-    document.getElementById('prevBtn').addEventListener('click', () => loadIndex(state.queueIndex - 1));
-    document.getElementById('nextBtn').addEventListener('click', () => loadIndex(state.queueIndex + 1));
-    document.getElementById('skipBtn').addEventListener('click', () => loadIndex(state.queueIndex + 1));
-    document.getElementById('saveBtn').addEventListener('click', () => {
+    // Nothing gets submitted per-image; Prev/Next just flush the pending autosave
+    // (so a fast click never drops an edit) and move to the adjacent image. The
+    // patient's images are only finalized together when the diagnosis is submitted.
+    async function flushPendingSave() {
         if (state.saveTimer) { clearTimeout(state.saveTimer); state.saveTimer = null; }
-        flushSave();
+        await flushSave();
+    }
+    document.getElementById('prevBtn').addEventListener('click', async () => {
+        await flushPendingSave();
+        loadIndex(state.queueIndex - 1);
     });
+    document.getElementById('nextBtn').addEventListener('click', async () => {
+        await flushPendingSave();
+        loadIndex(state.queueIndex + 1);
+    });
+    document.getElementById('saveBtn').addEventListener('click', flushPendingSave);
     document.getElementById('discardBtn').addEventListener('click', async () => {
         const reason = prompt('Reason for discarding this image:');
         if (!reason) return;
@@ -1524,44 +1481,6 @@
             alert('Discard failed: ' + err.message);
         }
     });
-    document.getElementById('submitBtn').addEventListener('click', submit);
-    async function submit() {
-        if (state.saveTimer) { clearTimeout(state.saveTimer); state.saveTimer = null; }
-        await flushSave();
-        try {
-            await ensureAnnotation();
-            setPill('Submitting...', 'saving');
-            // Send a final snapshot of the diagnosis block so any UI defaults the user
-            // didn't explicitly touch (e.g. confidence slider) are validated against.
-            const conf = Number(document.getElementById('confidence').value);
-            const dxBtn = document.querySelector('.dx-btn[aria-pressed="true"]');
-            const finalSnap = {diagnosis: {confidence: conf}};
-            if (dxBtn) finalSnap.diagnosis.colposcopic_impression = dxBtn.dataset.dx;
-            await api(`/api/v1/annotations/${state.annotation.id}/submit`, {
-                method: 'POST', body: JSON.stringify(finalSnap),
-            });
-            state.queue.splice(state.queueIndex, 1);
-            await loadIndex(state.queueIndex);
-        } catch (err) {
-            setPill('Error - retry', 'error');
-            const detail = err.body?.error?.details?.[0]?.msg;
-            alert('Submit failed: ' + (detail || err.message));
-        }
-    }
-
-    const normalNextBtn = document.getElementById('normalNextBtn');
-    if (normalNextBtn) {
-        normalNextBtn.addEventListener('click', async () => {
-            const normBtn = document.querySelector('.dx-btn[data-dx="NORMAL"]');
-            if (normBtn) {
-                document.querySelectorAll('.dx-btn').forEach(b => b.setAttribute('aria-pressed', 'false'));
-                normBtn.setAttribute('aria-pressed', 'true');
-            }
-            document.getElementById('confidence').value = 3;
-            queueAutosave({diagnosis: {colposcopic_impression: ['NORMAL'], confidence: 3}});
-            await submit();
-        });
-    }
 
     // ---------- Tool dock ----------
     document.querySelectorAll('#toolDock button[data-tool]').forEach(btn => {
@@ -1665,7 +1584,7 @@
             }
             return;
         }
-        if (e.key === 'Enter') { e.preventDefault(); submit(); return; }
+        if (e.key === 'Enter') { e.preventDefault(); document.getElementById('nextBtn').click(); return; }
         const lower = e.key.toLowerCase();
         if (lower === 'v') { setTool('pan'); return; }
         if (lower === 'b') { setTool('bbox'); return; }
@@ -1674,11 +1593,6 @@
         if (lower === 'c') { setTool('crop'); return; }
         if (lower === 'e' && state.tool === 'mask') { toggleErase(); return; }
         if (lower === 'd') { document.getElementById('discardBtn').click(); return; }
-        const idx = Number(e.key) - 1;
-        if (idx >= 0 && idx < DX_KEYS.length) {
-            const btn = document.querySelector(`.dx-btn[data-dx="${DX_KEYS[idx]}"]`);
-            if (btn) btn.click();
-        }
     });
 
     window.addEventListener('beforeunload', (e) => {
@@ -1689,45 +1603,32 @@
     });
 
     // ---------- Patient selector ----------
+    // The workbench is patient-first (the /annotate route redirects to the /patients
+    // picker when no patient is chosen), so switching patients is a real navigation,
+    // not an in-page queue swap.
     async function loadPatientList() {
         const sel = document.getElementById('patientSelect');
         if (!sel) return;
         try {
-            const d = await api('/api/v1/images/patients');
-            sel.innerHTML = '<option value="">All patients</option>';
-            for (const p of d.items) {
+            const [queueData, dxData] = await Promise.all([
+                api('/api/v1/images/patients'),
+                api('/api/v1/patients').catch(() => ({items: []})),
+            ]);
+            const dxStatus = new Map(dxData.items.map(p => [p.patient_code, p.my_diagnosis_status]));
+            sel.innerHTML = '';
+            for (const p of queueData.items) {
                 const o = document.createElement('option');
                 o.value = p.patient_code;
-                o.textContent = `${p.patient_code} — ${p.remaining} left / ${p.total}`;
+                const dxMark = dxStatus.get(p.patient_code) === 'submitted' ? ' · dx ✓' : '';
+                o.textContent = `${p.patient_code} — ${p.remaining} left / ${p.total}${dxMark}`;
                 sel.appendChild(o);
             }
             sel.value = state.patient;
-        } catch (e) { /* non-fatal: keep "All patients" */ }
-    }
-
-    async function selectPatient(code) {
-        state.patient = code || '';
-        state.queue = [];
-        state.queueCursor = null;
-        state.queueIndex = -1;
-        await fetchQueue();
-        if (state.queue.length) {
-            await loadIndex(0);
-        } else {
-            setPill('Queue empty', '');
-            viewerEmpty.textContent = state.patient
-                ? `No unannotated images left for ${state.patient}.`
-                : 'You have no unannotated images.';
-            viewerEmpty.dataset.show = 'true';
-            progress.textContent = '0 / 0';
-        }
+        } catch (e) { /* non-fatal: dropdown stays empty */ }
     }
 
     document.getElementById('patientSelect')?.addEventListener('change', (e) => {
-        selectPatient(e.target.value).catch(err => {
-            console.error(err);
-            setPill('Error', 'error');
-        });
+        if (e.target.value) window.location.href = '/annotate?patient=' + encodeURIComponent(e.target.value);
     });
 
     // ---------- Boot ----------
@@ -1735,27 +1636,35 @@
         setPill('Loading...', 'saving');
         initStage();
         bindRegionEditor();
-        // Optional ?patient=PAT-001 deep link from the admin patients table.
         state.patient = new URLSearchParams(location.search).get('patient') || '';
         try {
-            await fetchQueue();
-            loadPatientList();   // populate dropdown in the background
             const init = window.ANNOTATE_INIT?.initialImageId;
             if (init) {
-                state.queueIndex = state.queue.findIndex(i => i.id === init);
-                if (state.queueIndex === -1) {
-                    await loadByImageId(init);
-                    progress.textContent = '(deep link)';
+                // Deep link to a single image (e.g. from the patient diagnose page's
+                // image grid). Load it directly, then derive its patient for queueing.
+                await loadByImageId(init);
+                if (!state.patient) state.patient = state.image?.patient_code || '';
+                if (state.patient) {
+                    await fetchQueue();
+                    loadPatientList();
+                    state.queueIndex = state.queue.findIndex(i => i.id === init);
+                    progress.textContent = state.queueIndex === -1
+                        ? '(deep link)'
+                        : `${state.queueIndex + 1} / ${state.queue.length}${state.queueCursor ? '+' : ''}`;
                 } else {
-                    await loadIndex(state.queueIndex);
+                    progress.textContent = '(deep link)';
                 }
-            } else if (state.queue.length) {
-                await loadIndex(0);
+            } else if (state.patient) {
+                await fetchQueue();
+                loadPatientList();
+                if (state.queue.length) {
+                    await loadIndex(0);
+                } else {
+                    goToPatientDiagnose();
+                }
             } else {
-                setPill('Queue empty', '');
-                viewerEmpty.textContent = state.patient
-                    ? `No unannotated images left for ${state.patient}.`
-                    : 'You have no unannotated images.';
+                // Shouldn't happen -- the server redirects a bare /annotate to /patients.
+                window.location.href = '/patients';
             }
         } catch (err) {
             console.error(err);

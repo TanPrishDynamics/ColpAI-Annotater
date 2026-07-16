@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_nav.html" import logo %}
 {% block title %}Review - ColpAI{% endblock %}
 {% block body %}
 <style>
@@ -7,43 +8,94 @@
         grid-template-columns: 300px minmax(0, 1fr) 360px;
         grid-template-rows: auto 1fr auto;
         height: 100vh;
+        height: 100dvh;
         max-width: none;
         padding: 0;
         margin: 0;
     }
-    .review-shell > header { grid-column: 1 / -1; }
 
+    /* Workbench header */
+    .wb-header {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 0 18px;
+        height: 54px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        z-index: 40;
+        flex-wrap: wrap;
+    }
+    .wb-brand { display: flex; align-items: center; gap: 9px; text-decoration: none; flex-shrink: 0; }
+    .wb-brand:hover { text-decoration: none; }
+    .wb-brand span {
+        font-family: var(--font-heading);
+        font-weight: 800;
+        font-size: 15px;
+        color: var(--fg);
+        letter-spacing: -0.01em;
+    }
+    .wb-brand .wb-mode {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--accent);
+        background: var(--accent-soft);
+        border-radius: var(--r-full);
+        padding: 2px 9px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    .wb-right { display: flex; gap: 14px; align-items: center; margin-left: auto; font-size: 13px; color: var(--fg-muted); flex-wrap: wrap; }
+    .progress { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--fg); }
+
+    /* Queue */
     .queue {
         background: var(--surface);
         border-right: 1px solid var(--border);
         overflow-y: auto;
     }
     .queue h3 {
-        font-size: 12px;
+        font-size: 11.5px;
         text-transform: uppercase;
-        letter-spacing: 0.6px;
+        letter-spacing: 0.07em;
         color: var(--fg-muted);
         padding: 14px 16px;
         margin: 0;
         border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        background: var(--surface);
+        z-index: 2;
     }
     .queue-item {
         display: grid;
         grid-template-columns: 48px 1fr;
         gap: 10px;
-        padding: 8px 16px;
+        padding: 9px 16px;
         cursor: pointer;
         align-items: center;
         border-bottom: 1px solid var(--border);
+        border-left: 3px solid transparent;
+        transition: background 0.15s ease;
     }
     .queue-item:hover { background: var(--surface-2); }
-    .queue-item[aria-selected="true"] { background: var(--surface-2); border-left: 3px solid var(--accent); padding-left: 13px; }
-    .queue-item img { width: 48px; height: 48px; object-fit: cover; border-radius: 4px; background: #000; }
-    .queue-item .meta { font-size: 11px; color: var(--fg-muted); }
-    .queue-item .label { font-weight: 600; font-size: 13px; }
+    .queue-item[aria-selected="true"] {
+        background: var(--accent-soft);
+        border-left-color: var(--accent);
+    }
+    .queue-item img {
+        width: 48px; height: 48px;
+        object-fit: cover;
+        border-radius: var(--r-sm);
+        background: #0B1220;
+    }
+    .queue-item .meta { font-size: 11px; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+    .queue-item .label { font-weight: 700; font-size: 13px; color: var(--accent); }
 
+    /* Viewer */
     .viewer {
-        background: #000;
+        background: #0B1220;
         position: relative;
         overflow: hidden;
     }
@@ -58,7 +110,7 @@
     .viewer-empty {
         position: absolute; inset: 0;
         display: flex; align-items: center; justify-content: center;
-        color: var(--fg-muted); font-size: 14px;
+        color: #7A8CA3; font-size: 14px;
     }
     .viewer-empty[data-show="false"] { display: none; }
     .region-overlay {
@@ -66,6 +118,7 @@
         pointer-events: none;
     }
 
+    /* Details panel */
     .side {
         background: var(--surface);
         border-left: 1px solid var(--border);
@@ -73,61 +126,64 @@
     }
     .side .group { border-bottom: 1px solid var(--border); padding: 16px 20px; }
     .side h4 {
-        font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px;
-        color: var(--fg-muted); margin: 0 0 10px;
+        font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.07em;
+        color: var(--fg-muted); margin: 0 0 10px; font-weight: 700;
     }
     .kv {
         display: grid;
         grid-template-columns: 130px 1fr;
-        gap: 4px 12px;
+        gap: 5px 12px;
         font-size: 13px;
     }
     .kv .k { color: var(--fg-muted); }
-    .kv .v { color: var(--fg); font-variant-numeric: tabular-nums; }
+    .kv .v { color: var(--fg); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 
     .dx-badge {
         display: inline-block;
-        padding: 4px 10px;
-        border-radius: 999px;
+        padding: 3px 9px;
+        border-radius: var(--r-full);
         color: white;
-        font-weight: 600;
-        font-size: 12px;
+        font-weight: 700;
+        font-size: 11.5px;
+        letter-spacing: 0.02em;
     }
 
+    /* Action bar */
     .review-actions {
         grid-column: 1 / -1;
         background: var(--surface);
         border-top: 1px solid var(--border);
-        padding: 14px 24px;
+        padding: 12px 18px;
         display: flex;
         gap: 12px;
         align-items: center;
         justify-content: space-between;
         flex-wrap: wrap;
     }
-    .review-actions .right { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .review-actions .right { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .review-actions textarea {
-        background: var(--surface-2);
-        color: var(--fg);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 8px 10px;
-        font-size: 13px;
-        width: min(320px, 100%);
-        height: 44px;
+        width: min(340px, 100%);
+        height: 42px;
+        min-height: 42px;
         resize: none;
-        font-family: inherit;
+        font-size: 13px;
+        padding: 10px 12px;
     }
+    .review-actions .hint { font-size: 11.5px; color: var(--fg-faint); }
     .empty-q { padding: 24px 16px; color: var(--fg-muted); font-size: 13px; }
 </style>
 
 <div class="review-shell">
-    <header>
-        <h1>ColpAI Review</h1>
-        <div class="user-bar">
+    <header class="wb-header">
+        <a class="wb-brand" href="/dashboard" aria-label="ColpAI dashboard">
+            {{ logo(24) }}
+            <span>ColpAI</span>
+            <span class="wb-mode">Review</span>
+        </a>
+        <div class="wb-right">
             <span id="queueCount" class="progress">- pending</span>
             <span>{{ user.username }} <span class="muted">({{ user.role.value }})</span></span>
-            <a href="/dashboard" class="btn secondary">Dashboard</a>
+            <a href="/dashboard" class="btn secondary sm">Dashboard</a>
         </div>
     </header>
 
@@ -149,7 +205,10 @@
     <div class="review-actions">
         <div class="muted" id="annotatorLine">No annotation selected.</div>
         <div class="right">
-            <textarea id="reviewComment" placeholder="Comment (optional for approve; recommended for reject)"></textarea>
+            <div>
+                <textarea id="reviewComment" placeholder="Comment (optional for approve; recommended for reject)" aria-label="Review comment"></textarea>
+                <div class="hint"><kbd>A</kbd> approve &nbsp;·&nbsp; <kbd>R</kbd> reject &nbsp;·&nbsp; <kbd>J</kbd>/<kbd>K</kbd> navigate</div>
+            </div>
             <button class="danger" id="rejectBtn" disabled>Reject</button>
             <button id="approveBtn" disabled>Approve</button>
         </div>

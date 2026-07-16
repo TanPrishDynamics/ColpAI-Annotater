@@ -48,10 +48,6 @@ class Image(db.Model):
         cascade='all, delete-orphan',
         lazy='dynamic',
     )
-    consensus = db.relationship(
-        'ConsensusLabel', back_populates='image', uselist=False,
-        cascade='all, delete-orphan',
-    )
     discards = db.relationship(
         'DiscardedImage', back_populates='image', lazy='dynamic',
         cascade='all, delete-orphan',

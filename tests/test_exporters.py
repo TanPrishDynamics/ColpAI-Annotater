@@ -18,7 +18,7 @@ from PIL import Image as PILImage
 
 from app import create_app
 from app.extensions import db
-from app.models import Image, ImageAnnotation, Region, User
+from app.models import Image, ImageAnnotation, PatientDiagnosis, Region, User
 from app.models.enums import (
     AnnotationStatus,
     DiagnosisLabel,
@@ -79,6 +79,7 @@ def _seed():
         sha256='a' * 64,
         source_path=_IMG_FILE,
         dataset_source='colpo_positive',
+        patient_code='PAT-001',
         width_px=IMG_W,
         height_px=IMG_H,
     )
@@ -90,11 +91,19 @@ def _seed():
         annotator_id=user.id,
         status=AnnotationStatus.reviewed,
         version=1,
-        colposcopic_impression=DiagnosisLabel.CIN2,
-        confidence=4,
     )
     db.session.add(ann)
     db.session.flush()
+
+    db.session.add(PatientDiagnosis(
+        patient_code='PAT-001',
+        annotator_id=user.id,
+        status=AnnotationStatus.submitted,
+        colposcopic_impression=[DiagnosisLabel.CIN2.value],
+        confidence=4,
+        reid_margin=1, reid_color=1, reid_vessels=1, reid_iodine=1,
+        swede_aceto=1, swede_margin=1, swede_vessels=1, swede_size=1, swede_iodine=1,
+    ))
 
     db.session.add_all([
         Region(
@@ -140,13 +149,23 @@ def test_rle_roundtrip():
 def test_csv_image_and_region(app):
     sel = gather_export_selection(status='reviewed')
     image_csv = csv_exporter.export_image_csv(sel)
-    assert 'colposcopic_impression' in image_csv.splitlines()[0]
-    assert 'CIN2' in image_csv  # the image-level impression
     assert image_csv.count('\n') == 2  # header + 1 row
 
     region_csv = csv_exporter.export_region_csv(sel)
     assert region_csv.count('\n') == 4  # header + 3 regions
     assert 'CIN1' in region_csv and 'CIN3' in region_csv
+
+
+def test_patient_csv(app):
+    import csv
+    import io as _io
+    rows = list(csv.DictReader(_io.StringIO(csv_exporter.export_patient_csv())))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row['patient_code'] == 'PAT-001'
+    assert row['colposcopic_impression'] == 'CIN2'
+    assert row['reid_total'] == '4'
+    assert row['swede_total'] == '5'
 
 
 def test_coco_structure(app):
@@ -211,6 +230,8 @@ def test_bundle_zip(app):
     assert any(n.startswith('images/') for n in names)
     assert any(n.startswith('overlays/') for n in names)
     assert 'labels/annotations_image.csv' in names
+    assert 'labels/patients.csv' in names
+    assert 'PAT-001' in zf.read('labels/patients.csv').decode()
     assert 'labels/coco.json' in names
     assert 'manifest.csv' in names
     assert 'README.txt' in names

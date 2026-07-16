@@ -1,84 +1,117 @@
 {% extends "base.html" %}
+{% from "_nav.html" import navbar %}
 {% block title %}Dashboard - ColpAI{% endblock %}
 {% block body %}
+{{ navbar(user, active='dashboard') }}
 <style>
-    .stat-grid-2 {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-        gap: 16px;
-    }
     .chart-wrap { position: relative; height: 280px; }
     .chart-row {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        gap: 16px;
+        gap: 18px;
     }
     @media (max-width: 900px) { .chart-row { grid-template-columns: 1fr; } }
     .badge-band {
         display: inline-block;
         padding: 4px 10px;
-        border-radius: 999px;
+        border-radius: var(--r-full);
         font-size: 12px;
         font-weight: 600;
         color: white;
     }
+    .big-num {
+        font-family: var(--font-heading);
+        font-size: 32px;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+    }
     .recent-row {
         display: grid;
-        grid-template-columns: 56px 1fr auto;
+        grid-template-columns: 52px 1fr auto;
         gap: 12px;
         align-items: center;
-        padding: 8px;
+        padding: 9px 8px;
         margin: 0 -8px;
-        border-radius: 8px;
+        border-radius: var(--r-md);
         border-bottom: 1px solid var(--border);
         transition: background 0.15s ease;
     }
+    a:has(> .recent-row):hover { text-decoration: none; }
     .recent-row:hover { background: var(--surface-2); }
-    .img-card {
-        background: var(--surface-2);
-        border-radius: 8px;
-        overflow: hidden;
-        text-decoration: none;
-        color: inherit;
-        display: block;
-        border: 1px solid transparent;
-        transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    .recent-row img {
+        width: 52px; height: 52px;
+        object-fit: cover;
+        border-radius: var(--r-sm);
+        background: #0B1220;
     }
-    .img-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); text-decoration: none; }
-    .recent-row img { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; background: #000; }
     .recent-row .meta { font-size: 12px; color: var(--fg-muted); }
     .dx-badge {
         display: inline-block;
         padding: 2px 8px;
-        border-radius: 999px;
+        border-radius: var(--r-full);
         color: white;
-        font-weight: 600;
+        font-weight: 700;
         font-size: 11px;
+        letter-spacing: 0.02em;
     }
+    .img-card {
+        background: var(--surface);
+        border-radius: var(--r-md);
+        overflow: hidden;
+        text-decoration: none;
+        color: inherit;
+        display: block;
+        border: 1px solid var(--border);
+        transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+    }
+    .img-card:hover {
+        box-shadow: var(--shadow-md);
+        border-color: var(--border-strong);
+        text-decoration: none;
+        transform: translateY(-1px);
+    }
+    .filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .filter-bar select { width: auto; min-width: 150px; }
+    .export-controls {
+        display: flex;
+        gap: 14px;
+        margin-bottom: 14px;
+        flex-wrap: wrap;
+        align-items: flex-end;
+    }
+    .export-controls > div { min-width: 180px; }
+    .export-controls label { margin-bottom: 5px; }
+    .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .cta-row { display: flex; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
 </style>
-<header>
-    <h1>ColpAI Annotator</h1>
-    <div class="user-bar">
-        <span>{{ user.username }} <span class="muted">({{ user.role.value }})</span></span>
-        {% if user.role.value in ['reviewer', 'admin'] %}
-            <a href="/review" class="btn secondary">Review</a>
-        {% endif %}
-        {% if user.role.value == 'admin' %}
-            <a href="/admin" class="btn secondary">Admin</a>
-        {% endif %}
-        <button class="secondary" onclick="logout()">Logout</button>
-    </div>
-</header>
 <main>
+    <div class="page-head">
+        <h1>Dashboard</h1>
+        <p id="scopeNote"></p>
+    </div>
+
     <div class="card">
-        <h2>Overview <span class="muted" id="scopeNote" style="font-weight:400; font-size:13px;"></span></h2>
-        <div class="stat-grid-2" id="stats"></div>
-        <div style="display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap;">
+        <h2>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            Overview
+        </h2>
+        <div class="stat-grid" id="stats">
+            <div class="skel" style="height: 76px;"></div>
+            <div class="skel" style="height: 76px;"></div>
+            <div class="skel" style="height: 76px;"></div>
+            <div class="skel" style="height: 76px;"></div>
+        </div>
+        <div class="cta-row">
             {% if user.role.value != 'reviewer' %}
-            <a href="/annotate" class="btn">Start annotating &rarr;</a>
+            <a href="/patients" class="btn">
+                Start annotating
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </a>
             {% endif %}
             {% if user.role.value in ['reviewer', 'admin'] %}
-                <a href="/review" class="btn secondary">Open review queue</a>
+            <a href="/review" class="btn secondary">Open review queue</a>
             {% endif %}
         </div>
     </div>
@@ -90,45 +123,50 @@
         </div>
         <div class="card">
             <h2>Inter-rater agreement</h2>
-            <div id="agreement" style="font-size: 14px;">Loading...</div>
+            <div id="agreement" style="font-size: 14px;">
+                <div class="skel" style="height: 90px;"></div>
+            </div>
         </div>
     </div>
 
     <div class="card">
-        <h2>Productivity (last 14 days)</h2>
+        <h2>Productivity <span class="muted" style="font-weight: 400;">(last 14 days)</span></h2>
         <div class="chart-wrap" style="height: 240px;"><canvas id="prodChart"></canvas></div>
     </div>
 
     <div class="card">
         <h2>Recent submissions</h2>
-        <div id="recent"><div class="muted">Loading...</div></div>
+        <div id="recent"><div class="skel" style="height: 60px;"></div></div>
     </div>
 
     <div class="card">
         <h2>Datasets</h2>
-        <div id="datasets" class="muted">Loading...</div>
+        <div id="datasets" class="muted">Loading…</div>
     </div>
 
     {% if user.role.value in ['reviewer', 'admin'] %}
     <div class="card">
-        <h2>Export dataset</h2>
-        <p class="muted" style="font-size: 13px; margin-top: 0;">
-            Export annotations as training-ready files. The same selection feeds every format.
-        </p>
-        <div style="display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; align-items: flex-end;">
-            <label style="font-size: 12px; color: var(--fg-muted);">Dataset<br>
+        <h2>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export dataset
+        </h2>
+        <p class="card-sub">Export annotations as training-ready files. The same selection feeds every format.</p>
+        <div class="export-controls">
+            <div>
+                <label for="exportDataset">Dataset</label>
                 <select id="exportDataset"><option value="">All datasets</option></select>
-            </label>
-            <label style="font-size: 12px; color: var(--fg-muted);">Annotations<br>
+            </div>
+            <div>
+                <label for="exportStatus">Annotations</label>
                 <select id="exportStatus">
                     <option value="reviewed">Reviewed only</option>
                     <option value="submitted" selected>Submitted &amp; better</option>
                     <option value="all">All (non-draft)</option>
                 </select>
-            </label>
-            <div id="exportSummary" class="muted" style="font-size: 13px; padding-bottom: 6px;"></div>
+            </div>
+            <div id="exportSummary" class="muted" style="padding-bottom: 10px;"></div>
         </div>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <div class="btn-row">
             <button class="secondary" onclick="downloadExport('csv', {level:'image'})">CSV (per image)</button>
             <button class="secondary" onclick="downloadExport('csv', {level:'region'})">CSV (per region)</button>
             <button class="secondary" onclick="downloadExport('coco')">COCO JSON</button>
@@ -140,15 +178,15 @@
 
     <div class="card">
         <h2>Browse images</h2>
-        <div style="display: flex; gap: 12px; margin-bottom: 16px;">
-            <select id="phaseFilter">
+        <div class="filter-bar">
+            <select id="phaseFilter" aria-label="Filter by image phase">
                 <option value="">All phases</option>
                 <option value="native">Native</option>
                 <option value="via">VIA</option>
                 <option value="vili">VILI</option>
                 <option value="green_filter">Green filter</option>
             </select>
-            <select id="statusFilter">
+            <select id="statusFilter" aria-label="Filter by annotation status">
                 <option value="all">All</option>
                 <option value="unannotated" selected>Unannotated by me</option>
                 <option value="mine">Submitted by me</option>
@@ -162,18 +200,20 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 const LABEL_COLOR = {
-    NORMAL: '#2e9a5a', CIN1: '#c9a531', CIN2: '#cf7a31',
-    CIN3: '#c84a3a', AIS: '#8a4fbf', INVASIVE_CANCER: '#7a1f1f',
-    INFLAMMATION: '#d65db1', INFECTION: '#00a3a3', EROSION: '#b5651d',
+    NORMAL: '#059669', CIN1: '#D97706', CIN2: '#EA580C',
+    CIN3: '#DC2626', AIS: '#7C3AED', INVASIVE_CANCER: '#881337',
+    INFLAMMATION: '#DB2777', INFECTION: '#0891B2', EROSION: '#B45309',
 };
 const BAND_COLOR = {
-    'worse than chance': '#7a1f1f',
-    'slight': '#c84a3a',
-    'fair': '#cf7a31',
-    'moderate': '#c9a531',
-    'substantial': '#2e9a5a',
-    'almost perfect': '#1f6f3a',
+    'worse than chance': '#881337',
+    'slight': '#DC2626',
+    'fair': '#EA580C',
+    'moderate': '#D97706',
+    'substantial': '#059669',
+    'almost perfect': '#047857',
 };
+const CHART_TICK = '#587082';
+const CHART_GRID = '#E2EAF0';
 
 async function api(path) {
     const res = await fetch(path, {credentials: 'same-origin'});
@@ -183,7 +223,8 @@ async function api(path) {
 
 async function loadStats() {
     const d = await api('/api/v1/dashboard/stats');
-    document.getElementById('scopeNote').textContent = d.scope === 'site' ? '(site-wide)' : '(your activity)';
+    document.getElementById('scopeNote').textContent =
+        d.scope === 'site' ? 'Site-wide activity across all annotators.' : 'Your annotation activity.';
     const fields = [
         ['Total images', d.total_images],
         ['Submitted', d.submitted_annotations],
@@ -208,17 +249,18 @@ async function loadDistribution() {
     const d = await api('/api/v1/dashboard/distribution');
     const labels = d.items.map(x => x.label);
     const data = d.items.map(x => x.count);
-    const colors = labels.map(l => LABEL_COLOR[l] || '#7aa3ff');
+    const colors = labels.map(l => LABEL_COLOR[l] || '#0E7490');
     const ctx = document.getElementById('distChart').getContext('2d');
     if (distChart) distChart.destroy();
     distChart = new Chart(ctx, {
         type: 'doughnut',
-        data: {labels, datasets: [{data, backgroundColor: colors, borderWidth: 0}]},
+        data: {labels, datasets: [{data, backgroundColor: colors, borderWidth: 2, borderColor: '#fff'}]},
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            cutout: '62%',
             plugins: {
-                legend: {position: 'right', labels: {color: '#334155'}},
+                legend: {position: 'right', labels: {color: '#14232E', boxWidth: 12, boxHeight: 12, padding: 12, font: {family: "'Noto Sans', sans-serif", size: 12}}},
             },
         },
     });
@@ -228,24 +270,24 @@ async function loadAgreement() {
     const d = await api('/api/v1/dashboard/agreement');
     const el = document.getElementById('agreement');
     if (d.mean_kappa == null) {
-        el.innerHTML = '<div class="muted">Not enough multi-rater data yet (need 2+ annotators on the same images).</div>';
+        el.innerHTML = '<div class="empty-state" style="padding: 20px;">Not enough multi-rater data yet — need 2+ annotators diagnosing the same patient.</div>';
         return;
     }
-    const bandColor = BAND_COLOR[d.interpretation] || '#7aa3ff';
+    const bandColor = BAND_COLOR[d.interpretation] || '#0E7490';
     el.innerHTML = `
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div>
                 <div class="muted" style="font-size: 12px;">Mean Cohen's kappa</div>
-                <div style="font-size: 32px; font-weight: 600; line-height: 1;">${d.mean_kappa.toFixed(3)}</div>
-                <div style="margin-top: 6px;"><span class="badge-band" style="background:${bandColor}">${d.interpretation}</span></div>
+                <div class="big-num">${d.mean_kappa.toFixed(3)}</div>
+                <div style="margin-top: 8px;"><span class="badge-band" style="background:${bandColor}">${d.interpretation}</span></div>
             </div>
             <div>
                 <div class="muted" style="font-size: 12px;">Mean % agreement</div>
-                <div style="font-size: 32px; font-weight: 600; line-height: 1;">${(d.mean_percent_agreement * 100).toFixed(1)}%</div>
-                <div class="muted" style="font-size: 12px; margin-top: 6px;">${d.multi_rater_images} multi-rater images, ${d.rater_count} raters</div>
+                <div class="big-num">${(d.mean_percent_agreement * 100).toFixed(1)}%</div>
+                <div class="muted" style="font-size: 12px; margin-top: 8px;">${d.multi_rater_patients} multi-rater patients, ${d.rater_count} raters</div>
             </div>
         </div>
-        <div class="muted" style="font-size: 12px; margin-top: 12px;">Target: kappa &gt; 0.75 for substantial agreement.</div>
+        <div class="muted" style="font-size: 12px; margin-top: 14px;">Target: kappa &gt; 0.75 for substantial agreement.</div>
     `;
 }
 
@@ -256,7 +298,7 @@ async function loadProductivity() {
     const allDates = new Set();
     for (const s of d.series) for (const p of s.points) allDates.add(p.date);
     const dates = [...allDates].sort();
-    const palette = ['#4f8cff', '#46c98b', '#e0a83a', '#c84a3a', '#8a4fbf', '#cf7a31'];
+    const palette = ['#0E7490', '#059669', '#D97706', '#DC2626', '#7C3AED', '#DB2777'];
     const datasets = d.series.map((s, i) => {
         const map = Object.fromEntries(s.points.map(p => [p.date, p.count]));
         return {
@@ -264,6 +306,7 @@ async function loadProductivity() {
             data: dates.map(d => map[d] || 0),
             backgroundColor: palette[i % palette.length],
             borderColor: palette[i % palette.length],
+            borderRadius: 3,
         };
     });
     const ctx = document.getElementById('prodChart').getContext('2d');
@@ -275,10 +318,10 @@ async function loadProductivity() {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                x: {stacked: true, ticks: {color: '#64748B'}, grid: {color: '#E2E8F0'}},
-                y: {stacked: true, beginAtZero: true, ticks: {color: '#64748B'}, grid: {color: '#E2E8F0'}},
+                x: {stacked: true, ticks: {color: CHART_TICK}, grid: {display: false}},
+                y: {stacked: true, beginAtZero: true, ticks: {color: CHART_TICK, precision: 0}, grid: {color: CHART_GRID}},
             },
-            plugins: {legend: {labels: {color: '#334155'}}},
+            plugins: {legend: {labels: {color: '#14232E', boxWidth: 12, boxHeight: 12, font: {family: "'Noto Sans', sans-serif", size: 12}}}},
         },
     });
 }
@@ -287,22 +330,20 @@ async function loadRecent() {
     const d = await api('/api/v1/dashboard/recent?limit=8');
     const el = document.getElementById('recent');
     if (!d.items.length) {
-        el.innerHTML = '<div class="muted">No submissions yet.</div>';
+        el.innerHTML = '<div class="empty-state">No submissions yet.</div>';
         return;
     }
     el.innerHTML = d.items.map(a => {
-        const dxArray = a.diagnosis?.colposcopic_impression || [];
-        const dx = dxArray.length > 0 ? dxArray.join(', ') : '';
-        const color = LABEL_COLOR[dx] || '#7aa3ff';
+        const badge = a.patient_code || a.image_phase || '';
         return `
             <a href="/annotate/${a.image_id}" style="text-decoration:none; color:inherit;">
                 <div class="recent-row">
-                    <img src="/api/v1/images/${a.image_id}/file" alt="">
+                    <img src="/api/v1/images/${a.image_id}/file" alt="" loading="lazy">
                     <div>
-                        <div>${dx ? `<span class="dx-badge" style="background:${color}">${dx}</span>` : '<span class="muted">(no dx)</span>'} ${a.annotator_username ? `<span class="muted" style="font-size:12px;">by ${a.annotator_username}</span>` : ''}</div>
+                        <div>${badge ? `<span class="dx-badge" style="background:#0E7490">${badge}</span>` : ''} ${a.annotator_username ? `<span class="muted" style="font-size:12px;">by ${a.annotator_username}</span>` : ''}</div>
                         <div class="meta">${a.submitted_at ? new Date(a.submitted_at).toLocaleString() : '-'}</div>
                     </div>
-                    <div class="meta">v${a.version}</div>
+                    <div class="meta tabular">v${a.version}</div>
                 </div>
             </a>`;
     }).join('');
@@ -325,25 +366,26 @@ async function loadImages() {
     const status = document.getElementById('statusFilter').value;
     const params = new URLSearchParams({limit: 24, status});
     if (phase) params.set('phase', phase);
-    const res = await fetch('/api/v1/images?' + params, {credentials: 'same-origin'});
     const grid = document.getElementById('imageGrid');
+    grid.innerHTML = Array.from({length: 6}, () => '<div class="skel" style="height: 180px;"></div>').join('');
+    const res = await fetch('/api/v1/images?' + params, {credentials: 'same-origin'});
     if (!res.ok) {
         grid.innerHTML = '<div class="alert error">Failed to load images.</div>';
         return;
     }
     const d = await res.json();
     if (!d.items.length) {
-        grid.innerHTML = '<div class="muted">No images match this filter.</div>';
+        grid.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;">No images match this filter.</div>';
         return;
     }
     grid.innerHTML = d.items.map(img => `
         <a href="/annotate/${img.id}" class="img-card" title="Open in annotator">
             <img src="/api/v1/images/${img.id}/file" alt="" loading="lazy"
-                 style="width: 100%; height: 140px; object-fit: cover; display: block; background: #000;"
+                 style="width: 100%; height: 140px; object-fit: cover; display: block; background: #0B1220;"
                  onerror="this.style.display='none'">
-            <div style="padding: 8px; font-size: 11px;">
-                <div style="color: var(--fg-muted);">${img.dataset_source}</div>
-                <div style="color: var(--fg-muted);">${img.image_phase || 'no phase'} - ${img.image_resolution || '?'}</div>
+            <div style="padding: 8px 10px; font-size: 11.5px;">
+                <div style="color: var(--fg); font-weight: 600;">${img.dataset_source}</div>
+                <div style="color: var(--fg-muted);">${img.image_phase || 'no phase'} · ${img.image_resolution || '?'}</div>
             </div>
         </a>
     `).join('');
@@ -361,7 +403,7 @@ function exportParams() {
 async function loadExportSummary() {
     const el = document.getElementById('exportSummary');
     if (!el) return;
-    el.textContent = 'Counting...';
+    el.textContent = 'Counting…';
     try {
         const d = await api('/api/v1/export/summary?' + exportParams());
         el.textContent = `${d.image_count.toLocaleString()} images, ${d.region_count.toLocaleString()} regions`;
@@ -390,11 +432,6 @@ async function initExport() {
     sel.addEventListener('change', loadExportSummary);
     document.getElementById('exportStatus').addEventListener('change', loadExportSummary);
     loadExportSummary();
-}
-
-async function logout() {
-    await fetch('/api/v1/auth/logout', {method: 'POST', credentials: 'same-origin'});
-    window.location.href = '/login';
 }
 
 async function boot() {

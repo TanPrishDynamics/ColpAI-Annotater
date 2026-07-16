@@ -2,7 +2,7 @@
 
 Endpoints:
 - GET  /api/v1/review/queue            - submitted annotations awaiting review
-- GET  /api/v1/review/disagreements    - images where annotators disagree on impression
+- GET  /api/v1/review/disagreements    - patients where annotators disagree on diagnosis
 - POST /api/v1/review/{annotation_id}/approve
 - POST /api/v1/review/{annotation_id}/reject
 """
@@ -17,7 +17,7 @@ from sqlalchemy import and_, exists, select
 
 from app.api.errors import error_response
 from app.extensions import db
-from app.models import ImageAnnotation, ReviewAction
+from app.models import Image, ImageAnnotation, PatientDiagnosis, ReviewAction
 from app.models.enums import AnnotationStatus, ReviewActionType, UserRole
 from app.schemas.review import ReviewActionBody, ReviewQueueQuery
 from app.services import consensus
@@ -80,8 +80,20 @@ def queue():
     items = rows[:query.limit]
     next_cursor = _encode_cursor(items[-1].id) if has_more and items else None
 
+    images = {img.id: img for img in db.session.execute(
+        select(Image).where(Image.id.in_([a.image_id for a in items]))
+    ).scalars().all()}
+
+    def _item(a):
+        img = images.get(a.image_id)
+        return {
+            **a.to_dict(include_regions=True),
+            'patient_code': img.patient_code if img else None,
+            'image_phase': img.image_phase.value if img and img.image_phase else None,
+        }
+
     return jsonify({
-        'items': [a.to_dict(include_regions=True) for a in items],
+        'items': [_item(a) for a in items],
         'next_cursor': next_cursor,
     })
 
@@ -92,7 +104,7 @@ def disagreements():
     guard = _require_reviewer()
     if guard is not None:
         return guard
-    return jsonify({'items': consensus.find_disagreement_images()})
+    return jsonify({'items': consensus.find_disagreement_patients()})
 
 
 def _record_action(annotation_id: str, action: ReviewActionType, comment: str | None):
@@ -113,6 +125,7 @@ def _record_action(annotation_id: str, action: ReviewActionType, comment: str | 
         comment=comment,
     ))
 
+    reopened_patient = None
     if action == ReviewActionType.approve:
         ann.status = AnnotationStatus.reviewed
         # Only once a reviewer approves do we render and store the final annotated
@@ -121,17 +134,37 @@ def _record_action(annotation_id: str, action: ReviewActionType, comment: str | 
         if ann.crop_box or ann.regions:
             ann.crop_path = render_and_store_annotated(ann)
     elif action == ReviewActionType.reject:
-        # Rejection sends the annotator back to drafting (new version).
+        # Rejection reopens the whole patient case for this annotator. The flagged
+        # image is superseded (the annotator redraws it as a fresh version), and
+        # their patient diagnosis drops back to draft -- so re-submitting the
+        # patient re-finalizes the fixed image back into the review queue. The
+        # reject ReviewAction stays on the superseded row for audit.
         ann.status = AnnotationStatus.superseded
+        img = db.session.get(Image, ann.image_id)
+        if img is not None and img.patient_code:
+            pd = db.session.execute(
+                select(PatientDiagnosis).where(and_(
+                    PatientDiagnosis.patient_code == img.patient_code,
+                    PatientDiagnosis.annotator_id == ann.annotator_id,
+                    PatientDiagnosis.status == AnnotationStatus.submitted,
+                ))
+            ).scalar_one_or_none()
+            if pd is not None:
+                pd.status = AnnotationStatus.draft
+                pd.submitted_at = None
+                reopened_patient = img.patient_code
     db.session.commit()
 
-    # Refresh consensus opportunistically.
-    consensus.upsert_consensus_for_image(ann.image_id)
+    # A reopened patient diagnosis dropped out of the submitted set, so refresh
+    # its consensus (it may fall below the 2-annotator threshold and be wiped).
+    if reopened_patient:
+        consensus.upsert_consensus_for_patient(reopened_patient)
 
     return jsonify({
         'annotation_id': ann.id,
         'new_status': ann.status.value,
         'action': action.value,
+        'reopened_patient': reopened_patient,
     })
 
 

@@ -1,0 +1,51 @@
+{# Shared brand + primary navigation. Import per page:
+   {% from "_nav.html" import navbar, logo %} #}
+
+{% macro logo(size=26) -%}
+<svg class="brand-mark" width="{{ size }}" height="{{ size }}" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+    <rect width="32" height="32" rx="8" fill="var(--accent)"/>
+    <circle cx="15" cy="15" r="7.5" stroke="#fff" stroke-width="2.2"/>
+    <circle cx="15" cy="15" r="2.8" fill="#67E8F9"/>
+    <path d="M21 21l5 5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+</svg>
+{%- endmacro %}
+
+{% macro navbar(user, active='') -%}
+<header class="app-nav">
+    <div class="app-nav-inner">
+        <a class="brand" href="/dashboard" aria-label="ColpAI dashboard">
+            {{ logo(26) }}
+            <span class="brand-name">ColpAI<span class="brand-sub">Annotator</span></span>
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+            <a href="/dashboard" {% if active == 'dashboard' %}class="active" aria-current="page"{% endif %}>Dashboard</a>
+            {% if user.role.value != 'reviewer' %}
+            <a href="/patients" {% if active == 'patients' %}class="active" aria-current="page"{% endif %}>Patients</a>
+            {% endif %}
+            {% if user.role.value in ['reviewer', 'admin'] %}
+            <a href="/review" {% if active == 'review' %}class="active" aria-current="page"{% endif %}>Review</a>
+            {% endif %}
+            {% if user.role.value == 'admin' %}
+            <a href="/admin" {% if active == 'admin' %}class="active" aria-current="page"{% endif %}>Admin</a>
+            {% endif %}
+        </nav>
+        <div class="nav-user">
+            <div class="user-chip" title="{{ user.full_name or user.username }} ({{ user.role.value }})">
+                <span class="avatar" aria-hidden="true">{{ (user.full_name or user.username)[:1]|upper }}</span>
+                <span class="user-meta">
+                    <strong>{{ user.username }}</strong>
+                    <small>{{ user.role.value }}</small>
+                </span>
+            </div>
+            <button class="ghost sm nav-signout" type="button" onclick="colpaiLogout()" aria-label="Sign out" title="Sign out">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                <span class="signout-label">Sign out</span>
+            </button>
+        </div>
+    </div>
+</header>
+{%- endmacro %}

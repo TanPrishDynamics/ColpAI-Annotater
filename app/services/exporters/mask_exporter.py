@@ -50,11 +50,7 @@ def build_mask_zip(selection: ExportSelection) -> bytes:
             semantic = np.zeros((h, w), dtype=np.uint8)
 
             def _get_label(r):
-                if r.lesion_label:
-                    return r.lesion_label.value
-                elif ann.colposcopic_impression:
-                    return ann.colposcopic_impression[0]
-                return ''
+                return r.lesion_label.value if r.lesion_label else ''
 
             # Paint ascending severity so the worst grade wins on overlap.
             painted = sorted(

@@ -1,11 +1,11 @@
-"""Review and consensus models. Phase 1 defines the schema; review API comes in Phase 4."""
+"""Review models. Consensus is now patient-level (see app/models/patient.py)."""
 from datetime import datetime, timezone
 import uuid
 
 from sqlalchemy import Enum as SAEnum
 
 from app.extensions import db
-from app.models.enums import ReviewActionType, DiagnosisLabel
+from app.models.enums import ReviewActionType
 
 
 def _uuid() -> str:
@@ -33,19 +33,6 @@ class ReviewAction(db.Model):
 
     annotation = db.relationship('ImageAnnotation', back_populates='review_actions')
     reviewer = db.relationship('User')
-
-
-class ConsensusLabel(db.Model):
-    __tablename__ = 'consensus_labels'
-
-    id = db.Column(db.String(36), primary_key=True, default=_uuid)
-    image_id = db.Column(db.String(36), db.ForeignKey('images.id'), nullable=False, unique=True)
-    label = db.Column(db.JSON, nullable=False)  # list of DiagnosisLabel strings
-    derived_from = db.Column(db.JSON, nullable=False)
-    agreement_score = db.Column(db.Float, nullable=True)
-    computed_at = db.Column(db.DateTime(timezone=True), default=_utcnow, nullable=False)
-
-    image = db.relationship('Image', back_populates='consensus')
 
 
 class DiscardedImage(db.Model):

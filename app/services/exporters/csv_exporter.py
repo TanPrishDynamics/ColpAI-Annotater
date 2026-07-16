@@ -12,7 +12,19 @@ from __future__ import annotations
 import csv
 import io
 
+from app.extensions import db
+from app.models import PatientConsensus, PatientDiagnosis, User
+from app.models.enums import AnnotationStatus
 from app.services.exporters.selection import ExportSelection
+
+PATIENT_COLUMNS = [
+    'patient_code', 'annotator_id', 'annotator_username', 'status',
+    'colposcopic_impression', 'histopathology_result', 'confidence', 'notes',
+    'cytology_result', 'hpv_status', 'management_recommendation', 'biopsy_taken',
+    'reid_margin', 'reid_color', 'reid_vessels', 'reid_iodine', 'reid_total',
+    'swede_aceto', 'swede_margin', 'swede_vessels', 'swede_size', 'swede_iodine', 'swede_total',
+    'submitted_at', 'consensus_label', 'agreement_score', 'consensus_computed_at',
+]
 
 IMAGE_COLUMNS = [
     'image_id', 'sha256', 'dataset_source', 'source_path',
@@ -24,15 +36,13 @@ IMAGE_COLUMNS = [
     'scj_visibility', 'transformation_zone_type', 'tz_visibility',
     'acetowhitening_severity', 'iodine_pattern', 'vascular_pattern',
     'color_tone', 'surface_contour', 'atypical_vessels_present',
-    'colposcopic_impression', 'histopathology_result', 'confidence', 'notes',
-    'reid_margin', 'reid_color', 'reid_vessels', 'reid_iodine', 'reid_total',
-    'swede_aceto', 'swede_margin', 'swede_vessels', 'swede_size', 'swede_iodine', 'swede_total',
-    'region_count', 'submitted_at',
+    'ifcpc_grade', 'colposcopy_adequacy',
+    'notes', 'region_count', 'submitted_at',
 ]
 
 REGION_COLUMNS = [
     'image_id', 'dataset_source', 'source_path', 'width_px', 'height_px',
-    'annotation_id', 'annotator_id', 'colposcopic_impression',
+    'annotation_id', 'annotator_id',
     'region_id', 'region_type', 'lesion_label', 'lesion_location_clock',
     'lesion_quadrant', 'lesion_size_percent', 'lesion_margins',
     'punctation_present', 'punctation_severity',
@@ -79,21 +89,9 @@ def export_image_csv(selection: ExportSelection) -> str:
             'color_tone': _enum(ann.color_tone),
             'surface_contour': _enum(ann.surface_contour),
             'atypical_vessels_present': ann.atypical_vessels_present,
-            'colposcopic_impression': ", ".join(ann.colposcopic_impression) if ann.colposcopic_impression else '',
-            'histopathology_result': _enum(ann.histopathology_result),
-            'confidence': ann.confidence,
+            'ifcpc_grade': _enum(ann.ifcpc_grade),
+            'colposcopy_adequacy': _enum(ann.colposcopy_adequacy),
             'notes': ann.notes,
-            'reid_margin': ann.reid_margin,
-            'reid_color': ann.reid_color,
-            'reid_vessels': ann.reid_vessels,
-            'reid_iodine': ann.reid_iodine,
-            'reid_total': ann.reid_total,
-            'swede_aceto': ann.swede_aceto,
-            'swede_margin': ann.swede_margin,
-            'swede_vessels': ann.swede_vessels,
-            'swede_size': ann.swede_size,
-            'swede_iodine': ann.swede_iodine,
-            'swede_total': ann.swede_total,
             'region_count': len(ann.regions),
             'submitted_at': ann.submitted_at.isoformat() if ann.submitted_at else None,
         })
@@ -114,7 +112,6 @@ def export_region_csv(selection: ExportSelection) -> str:
                 'height_px': image.height_px,
                 'annotation_id': ann.id,
                 'annotator_id': ann.annotator_id,
-                'colposcopic_impression': ", ".join(ann.colposcopic_impression) if ann.colposcopic_impression else '',
                 'region_id': region.id,
                 'region_type': _enum(region.region_type),
                 'lesion_label': _enum(region.lesion_label),
@@ -128,4 +125,56 @@ def export_region_csv(selection: ExportSelection) -> str:
                 'mosaic_severity': region.mosaic_severity,
                 'region_notes': region.region_notes,
             })
+    return buf.getvalue()
+
+
+def export_patient_csv() -> str:
+    """One row per submitted patient diagnosis (the FINAL diagnosis), independent of
+    the per-image export selection -- there's no image/annotation to select here."""
+    rows = (
+        db.session.query(PatientDiagnosis, User)
+        .join(User, User.id == PatientDiagnosis.annotator_id)
+        .filter(PatientDiagnosis.status == AnnotationStatus.submitted)
+        .order_by(PatientDiagnosis.patient_code)
+        .all()
+    )
+    consensus_by_patient = {
+        c.patient_code: c
+        for c in db.session.query(PatientConsensus).all()
+    }
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=PATIENT_COLUMNS, extrasaction='ignore')
+    writer.writeheader()
+    for diagnosis, user in rows:
+        consensus = consensus_by_patient.get(diagnosis.patient_code)
+        writer.writerow({
+            'patient_code': diagnosis.patient_code,
+            'annotator_id': diagnosis.annotator_id,
+            'annotator_username': user.username,
+            'status': _enum(diagnosis.status),
+            'colposcopic_impression': ", ".join(diagnosis.colposcopic_impression) if diagnosis.colposcopic_impression else '',
+            'histopathology_result': _enum(diagnosis.histopathology_result),
+            'confidence': diagnosis.confidence,
+            'notes': diagnosis.notes,
+            'cytology_result': _enum(diagnosis.cytology_result),
+            'hpv_status': _enum(diagnosis.hpv_status),
+            'management_recommendation': _enum(diagnosis.management_recommendation),
+            'biopsy_taken': diagnosis.biopsy_taken,
+            'reid_margin': diagnosis.reid_margin,
+            'reid_color': diagnosis.reid_color,
+            'reid_vessels': diagnosis.reid_vessels,
+            'reid_iodine': diagnosis.reid_iodine,
+            'reid_total': diagnosis.reid_total,
+            'swede_aceto': diagnosis.swede_aceto,
+            'swede_margin': diagnosis.swede_margin,
+            'swede_vessels': diagnosis.swede_vessels,
+            'swede_size': diagnosis.swede_size,
+            'swede_iodine': diagnosis.swede_iodine,
+            'swede_total': diagnosis.swede_total,
+            'submitted_at': diagnosis.submitted_at.isoformat() if diagnosis.submitted_at else None,
+            'consensus_label': ", ".join(consensus.label) if consensus else '',
+            'agreement_score': consensus.agreement_score if consensus else None,
+            'consensus_computed_at': consensus.computed_at.isoformat() if consensus else None,
+        })
     return buf.getvalue()

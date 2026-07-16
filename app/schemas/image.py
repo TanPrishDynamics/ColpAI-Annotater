@@ -1,6 +1,15 @@
 """Pydantic schemas for image queue endpoints."""
 from pydantic import BaseModel, Field
 
+from app.models.enums import ImagePhase
+
+
+class ImagePhasePatch(BaseModel):
+    """Body for PATCH /api/v1/images/{id}. Lets an annotator correct the image
+    type (baseline/acetic-acid/Lugol's-iodine/green-filter) when auto-detection
+    at ingest got it wrong or couldn't guess."""
+    image_phase: ImagePhase
+
 
 class ImageQueueQuery(BaseModel):
     """Query params for GET /api/v1/images. All optional."""

@@ -5,12 +5,13 @@ annotate UI can still display existing regions on revisit.
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from app.models.enums import (
     AnnotationStatus,
     ColorTone,
-    DiagnosisLabel,
+    ColposcopyAdequacy,
+    IFCPCGrade,
     ImageQuality,
     LightingIssue,
     SCJVisibility,
@@ -46,28 +47,10 @@ class FeaturesBlock(BaseModel):
     atypical_vessels_present: bool | None = None
 
 
-class ScoringBlock(BaseModel):
-    """Colposcopic scoring indices. Each criterion is graded 0/1/2.
-
-    Reid Colposcopic Index = margin + color + vessels + iodine (0-8).
-    Swede score = aceto + margin + vessels + size + iodine (0-10).
-    """
-    reid_margin: int | None = Field(default=None, ge=0, le=2)
-    reid_color: int | None = Field(default=None, ge=0, le=2)
-    reid_vessels: int | None = Field(default=None, ge=0, le=2)
-    reid_iodine: int | None = Field(default=None, ge=0, le=2)
-    swede_aceto: int | None = Field(default=None, ge=0, le=2)
-    swede_margin: int | None = Field(default=None, ge=0, le=2)
-    swede_vessels: int | None = Field(default=None, ge=0, le=2)
-    swede_size: int | None = Field(default=None, ge=0, le=2)
-    swede_iodine: int | None = Field(default=None, ge=0, le=2)
-
-
-class DiagnosisBlock(BaseModel):
-    colposcopic_impression: list[DiagnosisLabel] | None = None
-    histopathology_result: DiagnosisLabel | None = None
-    confidence: int | None = Field(default=None, ge=1, le=5)
-    notes: str | None = Field(default=None, max_length=4000)
+class AssessmentBlock(BaseModel):
+    """IFCPC 2011 per-view summary for this single photo."""
+    ifcpc_grade: IFCPCGrade | None = None
+    colposcopy_adequacy: ColposcopyAdequacy | None = None
 
 
 class CropBox(BaseModel):
@@ -87,32 +70,19 @@ class AnnotationCreate(BaseModel):
 
 
 class AnnotationPatch(BaseModel):
-    """Autosave body. Every block is optional; partial blocks are allowed."""
+    """Autosave body, also used as the submit body (POST /annotations/{id}/submit).
+
+    Every block is optional; partial blocks are allowed. The FINAL diagnosis,
+    histopathology, confidence, and Reid/Swede scoring all live at the patient
+    level now (see app/schemas/patient.py) -- nothing diagnostic remains here, so
+    submit has no required fields.
+    """
     quality: QualityBlock | None = None
     anatomy: AnatomyBlock | None = None
     features: FeaturesBlock | None = None
-    scoring: ScoringBlock | None = None
-    diagnosis: DiagnosisBlock | None = None
+    assessment: AssessmentBlock | None = None
+    notes: str | None = Field(default=None, max_length=4000)
     crop_box: CropBox | None = None
-
-
-class AnnotationSubmit(BaseModel):
-    """Body for POST /annotations/{id}/submit. Server-side validation lives in the view."""
-    quality: QualityBlock | None = None
-    anatomy: AnatomyBlock | None = None
-    features: FeaturesBlock | None = None
-    scoring: ScoringBlock | None = None
-    diagnosis: DiagnosisBlock | None = None
-    crop_box: CropBox | None = None
-
-    @model_validator(mode='after')
-    def _diagnosis_required(self):
-        d = self.diagnosis
-        if d is None or not d.colposcopic_impression or d.confidence is None:
-            raise ValueError(
-                'At least one diagnosis.colposcopic_impression and diagnosis.confidence are required to submit.'
-            )
-        return self
 
 
 class DiscardRequest(BaseModel):

@@ -14,7 +14,7 @@ from sqlalchemy import and_, func, select
 
 from app.api.errors import error_response
 from app.extensions import db
-from app.models import Image, ImageAnnotation, ReviewAction, User
+from app.models import Image, ImageAnnotation, PatientDiagnosis, ReviewAction, User
 from app.models.enums import AnnotationStatus, ReviewActionType, UserRole
 from app.services import consensus
 
@@ -113,15 +113,15 @@ def stats():
 @bp.get('/distribution')
 @login_required
 def distribution():
-    """Counts of `colposcopic_impression` across submitted annotations."""
+    """Counts of `colposcopic_impression` across submitted patient diagnoses."""
     stmt = (
-        select(ImageAnnotation.colposcopic_impression)
-        .where(ImageAnnotation.status.in_(SUBMITTED_LIKE))
-        .where(ImageAnnotation.colposcopic_impression.isnot(None))
+        select(PatientDiagnosis.colposcopic_impression)
+        .where(PatientDiagnosis.status == AnnotationStatus.submitted)
+        .where(PatientDiagnosis.colposcopic_impression.isnot(None))
     )
     if not _is_admin():
-        stmt = stmt.where(ImageAnnotation.annotator_id == current_user.id)
-        
+        stmt = stmt.where(PatientDiagnosis.annotator_id == current_user.id)
+
     rows = db.session.execute(stmt).scalars().all()
     counts = defaultdict(int)
     for labels in rows:
@@ -170,33 +170,33 @@ def productivity():
 @bp.get('/agreement')
 @login_required
 def agreement():
-    """Pairwise Cohen's kappa on colposcopic_impression, averaged across rater pairs."""
-    # Build annotator_id -> {image_id: label} map from submitted annotations.
+    """Pairwise Cohen's kappa on patient colposcopic_impression, averaged across rater pairs."""
+    # Build annotator_id -> {patient_code: label} map from submitted patient diagnoses.
     stmt = (
         select(
-            ImageAnnotation.annotator_id,
-            ImageAnnotation.image_id,
-            ImageAnnotation.colposcopic_impression,
+            PatientDiagnosis.annotator_id,
+            PatientDiagnosis.patient_code,
+            PatientDiagnosis.colposcopic_impression,
         )
-        .where(ImageAnnotation.status.in_(SUBMITTED_LIKE))
-        .where(ImageAnnotation.colposcopic_impression.isnot(None))
+        .where(PatientDiagnosis.status == AnnotationStatus.submitted)
+        .where(PatientDiagnosis.colposcopic_impression.isnot(None))
     )
     rows = db.session.execute(stmt).all()
 
     by_rater: dict[str, dict[str, tuple]] = defaultdict(dict)
-    for annotator_id, image_id, labels in rows:
+    for annotator_id, patient_code, labels in rows:
         if isinstance(labels, list) and labels:
-            by_rater[annotator_id][image_id] = tuple(sorted(labels))
+            by_rater[annotator_id][patient_code] = tuple(sorted(labels))
 
     kappa = consensus.pairwise_kappa(by_rater)
 
     # Also compute mean percent-agreement for an easier-to-read second number.
-    image_to_labels: dict[str, list] = defaultdict(list)
-    for annotator_id, image_id, labels in rows:
+    patient_to_labels: dict[str, list] = defaultdict(list)
+    for annotator_id, patient_code, labels in rows:
         if isinstance(labels, list) and labels:
-            image_to_labels[image_id].append(tuple(sorted(labels)))
+            patient_to_labels[patient_code].append(tuple(sorted(labels)))
     agreements: list[float] = []
-    for image_id, label_tuples in image_to_labels.items():
+    for patient_code, label_tuples in patient_to_labels.items():
         if len(label_tuples) < 2:
             continue
         # percent agreement = pairs that match / total pairs.
@@ -208,7 +208,7 @@ def agreement():
         'mean_kappa': round(kappa, 4) if kappa is not None else None,
         'mean_percent_agreement': round(sum(agreements)/len(agreements), 4) if agreements else None,
         'rater_count': len(by_rater),
-        'multi_rater_images': len(agreements),
+        'multi_rater_patients': len(agreements),
         'interpretation': _kappa_band(kappa),
     })
 
@@ -238,9 +238,15 @@ def recent():
     if not _is_admin():
         stmt = stmt.where(ImageAnnotation.annotator_id == current_user.id)
     rows = db.session.execute(stmt).scalars().all()
+    images = {img.id: img for img in db.session.execute(
+        select(Image).where(Image.id.in_([a.image_id for a in rows]))
+    ).scalars().all()}
     return jsonify({
         'items': [{
             **a.to_dict(include_regions=False),
             'annotator_username': a.annotator.username if a.annotator else None,
+            'patient_code': images[a.image_id].patient_code if a.image_id in images else None,
+            'image_phase': (images[a.image_id].image_phase.value
+                             if a.image_id in images and images[a.image_id].image_phase else None),
         } for a in rows],
     })

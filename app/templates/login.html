@@ -1,31 +1,110 @@
 {% extends "base.html" %}
-{% block title %}Login - ColpAI{% endblock %}
+{% from "_nav.html" import logo %}
+{% block title %}Sign in - ColpAI{% endblock %}
 {% block body %}
-<main style="max-width: 400px; margin: 10vh auto 0; padding: 0 24px;">
-    <div style="text-align: center; margin-bottom: 20px;">
-        <h1 style="font-family: var(--font-heading); color: var(--accent); font-size: 26px; margin: 0 0 6px;">ColpAI Annotator</h1>
-        <p class="muted" style="margin: 0;">Sign in with the username and password you were given.</p>
-    </div>
-    <div class="card">
-        <div id="alert"></div>
-        <form id="loginForm">
-            <div class="field">
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus required>
+<style>
+    .auth-wrap {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background:
+            radial-gradient(600px 300px at 15% 0%, var(--accent-soft), transparent 70%),
+            radial-gradient(500px 260px at 90% 100%, var(--success-soft), transparent 70%),
+            var(--bg);
+    }
+    .auth-card {
+        width: 100%;
+        max-width: 380px;
+    }
+    .auth-brand {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 22px;
+        text-align: center;
+    }
+    .auth-brand h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+    }
+    .auth-brand p { margin: 0; color: var(--fg-muted); font-size: 13.5px; }
+    .auth-card .card { padding: 26px; box-shadow: var(--shadow-md); margin-bottom: 0; }
+    .pw-wrap { position: relative; }
+    .pw-wrap input { padding-right: 44px; }
+    .pw-toggle {
+        position: absolute;
+        top: 50%;
+        right: 6px;
+        transform: translateY(-50%);
+        background: transparent;
+        border: none;
+        color: var(--fg-muted);
+        min-height: 32px;
+        width: 32px;
+        padding: 0;
+        border-radius: var(--r-sm);
+        box-shadow: none;
+    }
+    .pw-toggle:hover { background: var(--surface-3); color: var(--fg); }
+    .auth-foot { text-align: center; margin-top: 16px; }
+</style>
+<div class="auth-wrap">
+    <div class="auth-card">
+        <div class="auth-brand">
+            {{ logo(44) }}
+            <div>
+                <h1>ColpAI Annotator</h1>
+                <p>Colposcopy image annotation workbench</p>
             </div>
-            <div class="field">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" autocomplete="current-password" required>
-            </div>
-            <button type="submit" id="loginBtn" style="width: 100%;">Sign in</button>
-        </form>
+        </div>
+        <div class="card">
+            <div id="alert" aria-live="polite"></div>
+            <form id="loginForm">
+                <div class="field">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" autocomplete="username"
+                           autocapitalize="none" spellcheck="false" autofocus required>
+                </div>
+                <div class="field">
+                    <label for="password">Password</label>
+                    <div class="pw-wrap">
+                        <input type="password" id="password" name="password" autocomplete="current-password" required>
+                        <button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password" title="Show password">
+                            <svg id="pwEyeOpen" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                            </svg>
+                            <svg id="pwEyeClosed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none;">
+                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <button type="submit" id="loginBtn" style="width: 100%;">Sign in</button>
+            </form>
+        </div>
+        <p class="muted auth-foot">Sign in with the username and password you were given.</p>
     </div>
-</main>
+</div>
 <script>
+const pwInput = document.getElementById('password');
+document.getElementById('pwToggle').addEventListener('click', function () {
+    const show = pwInput.type === 'password';
+    pwInput.type = show ? 'text' : 'password';
+    document.getElementById('pwEyeOpen').style.display = show ? 'none' : '';
+    document.getElementById('pwEyeClosed').style.display = show ? '' : 'none';
+    this.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    this.title = show ? 'Hide password' : 'Show password';
+});
+
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const username = document.getElementById('username').value.trim();
-    const password = document.getElementById('password').value;
+    const password = pwInput.value;
     const alertBox = document.getElementById('alert');
     const btn = document.getElementById('loginBtn');
     alertBox.innerHTML = '';
