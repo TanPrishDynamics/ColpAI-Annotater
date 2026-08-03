@@ -71,6 +71,14 @@ def review():
     return render_template('review.html', user=current_user)
 
 
+@bp.get('/review/diagnoses')
+@login_required
+def diagnosis_review():
+    if current_user.role.value not in {'reviewer', 'admin'}:
+        return render_template('forbidden.html', user=current_user), 403
+    return render_template('diagnosis_review.html', user=current_user)
+
+
 @bp.get('/admin')
 @login_required
 def admin():

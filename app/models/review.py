@@ -46,3 +46,24 @@ class DiscardedImage(db.Model):
 
     image = db.relationship('Image', back_populates='discards')
     annotator = db.relationship('User')
+
+
+class DiagnosisReviewAction(db.Model):
+    """Track reviewer approval/rejection of patient-level diagnoses."""
+    __tablename__ = 'diagnosis_review_actions'
+
+    id = db.Column(db.String(36), primary_key=True, default=_uuid)
+    patient_code = db.Column(db.String(32), nullable=False, index=True)
+    patient_diagnosis_id = db.Column(
+        db.String(36),
+        db.ForeignKey('patient_diagnoses.id'),
+        nullable=False,
+        index=True,
+    )
+    reviewer_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False, index=True)
+    action = db.Column(SAEnum(ReviewActionType, name='diagnosis_review_action'), nullable=False)
+    comment = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    diagnosis = db.relationship('PatientDiagnosis')
+    reviewer = db.relationship('User')

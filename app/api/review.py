@@ -2,9 +2,12 @@
 
 Endpoints:
 - GET  /api/v1/review/queue            - submitted annotations awaiting review
+- GET  /api/v1/review/diagnosis-queue  - submitted diagnoses awaiting review
 - GET  /api/v1/review/disagreements    - patients where annotators disagree on diagnosis
 - POST /api/v1/review/{annotation_id}/approve
 - POST /api/v1/review/{annotation_id}/reject
+- POST /api/v1/review/diagnosis/{patient_code}/approve
+- POST /api/v1/review/diagnosis/{patient_code}/reject
 """
 from __future__ import annotations
 
@@ -17,7 +20,7 @@ from sqlalchemy import and_, exists, select
 
 from app.api.errors import error_response
 from app.extensions import db
-from app.models import Image, ImageAnnotation, PatientDiagnosis, ReviewAction
+from app.models import Image, ImageAnnotation, PatientDiagnosis, ReviewAction, DiagnosisReviewAction
 from app.models.enums import AnnotationStatus, ReviewActionType, UserRole
 from app.schemas.review import ReviewActionBody, ReviewQueueQuery
 from app.services import consensus
@@ -186,3 +189,112 @@ def reject(annotation_id: str):
         return guard
     body = ReviewActionBody.model_validate(request.get_json(silent=True) or {})
     return _record_action(annotation_id, ReviewActionType.reject, body.comment)
+
+
+@bp.get('/diagnosis-queue')
+@login_required
+def diagnosis_queue():
+    """Submitted patient diagnoses that haven't been reviewed yet."""
+    guard = _require_reviewer()
+    if guard is not None:
+        return guard
+
+    query = ReviewQueueQuery.model_validate(request.args.to_dict())
+
+    stmt = (
+        select(PatientDiagnosis)
+        .where(PatientDiagnosis.status == AnnotationStatus.submitted)
+        .where(~exists().where(DiagnosisReviewAction.patient_diagnosis_id == PatientDiagnosis.id))
+    )
+    if query.cursor:
+        try:
+            after = _decode_cursor(query.cursor)
+        except Exception:
+            return error_response('invalid_cursor', 'Cursor is malformed.', status=422)
+        stmt = stmt.where(PatientDiagnosis.id > after)
+
+    stmt = stmt.order_by(PatientDiagnosis.id.asc()).limit(query.limit + 1)
+    rows = db.session.execute(stmt).scalars().all()
+    has_more = len(rows) > query.limit
+    items = rows[:query.limit]
+    next_cursor = _encode_cursor(items[-1].id) if has_more and items else None
+
+    return jsonify({
+        'items': [item.to_dict() for item in items],
+        'next_cursor': next_cursor,
+    })
+
+
+def _record_diagnosis_action(patient_code: str, action: ReviewActionType, comment: str | None):
+    """Record approval/rejection of a patient diagnosis."""
+    pd = db.session.execute(
+        select(PatientDiagnosis).where(and_(
+            PatientDiagnosis.patient_code == patient_code,
+            PatientDiagnosis.status == AnnotationStatus.submitted,
+        ))
+    ).scalar_one_or_none()
+
+    if pd is None:
+        return error_response(
+            'not_found',
+            f'No submitted diagnosis found for patient {patient_code}.',
+            status=404,
+        )
+
+    # Check if already reviewed
+    existing = db.session.execute(
+        select(DiagnosisReviewAction).where(
+            DiagnosisReviewAction.patient_diagnosis_id == pd.id
+        )
+    ).scalar_one_or_none()
+
+    if existing:
+        return error_response(
+            'already_reviewed',
+            'This diagnosis has already been reviewed.',
+            status=409,
+        )
+
+    db.session.add(DiagnosisReviewAction(
+        patient_code=patient_code,
+        patient_diagnosis_id=pd.id,
+        reviewer_id=current_user.id,
+        action=action,
+        comment=comment,
+    ))
+
+    if action == ReviewActionType.approve:
+        pd.status = AnnotationStatus.reviewed
+    elif action == ReviewActionType.reject:
+        # Reopen the diagnosis for the annotator to revise
+        pd.status = AnnotationStatus.draft
+        pd.submitted_at = None
+
+    db.session.commit()
+
+    return jsonify({
+        'patient_code': patient_code,
+        'diagnosis_id': pd.id,
+        'new_status': pd.status.value,
+        'action': action.value,
+    })
+
+
+@bp.post('/diagnosis/<patient_code>/approve')
+@login_required
+def approve_diagnosis(patient_code: str):
+    guard = _require_reviewer()
+    if guard is not None:
+        return guard
+    body = ReviewActionBody.model_validate(request.get_json(silent=True) or {})
+    return _record_diagnosis_action(patient_code, ReviewActionType.approve, body.comment)
+
+
+@bp.post('/diagnosis/<patient_code>/reject')
+@login_required
+def reject_diagnosis(patient_code: str):
+    guard = _require_reviewer()
+    if guard is not None:
+        return guard
+    body = ReviewActionBody.model_validate(request.get_json(silent=True) or {})
+    return _record_diagnosis_action(patient_code, ReviewActionType.reject, body.comment)

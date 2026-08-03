@@ -111,7 +111,8 @@
             </a>
             {% endif %}
             {% if user.role.value in ['reviewer', 'admin'] %}
-            <a href="/review" class="btn secondary">Open review queue</a>
+            <a href="/review" class="btn">Open image review queue</a>
+            <a href="/review/diagnoses" class="btn secondary">Review diagnoses</a>
             {% endif %}
         </div>
     </div>
