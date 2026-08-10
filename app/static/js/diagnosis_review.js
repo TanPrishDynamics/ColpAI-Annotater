@@ -19,9 +19,7 @@
     };
 
     const queueList = document.getElementById('queueList');
-    const queueCount = document.getElementById('queueCount');
-    const content = document.getElementById('content');
-    const sidePanel = document.getElementById('side');
+    const diagnosisCard = document.getElementById('diagnosisCard');
     const annotatorLine = document.getElementById('annotatorLine');
     const approveBtn = document.getElementById('approveBtn');
     const rejectBtn = document.getElementById('rejectBtn');
@@ -53,7 +51,6 @@
     }
 
     function renderQueue() {
-        queueCount.textContent = `${state.queue.length} pending`;
         if (!state.queue.length) {
             queueList.innerHTML = '<div class="empty-q">No diagnoses pending review.</div>';
             return;
@@ -62,11 +59,9 @@
             const dx = (d.colposcopic_impression || []).join(', ') || '(pending)';
             return `
                 <div class="queue-item" data-idx="${i}" aria-selected="${i === state.index ? 'true' : 'false'}">
-                    <div>
-                        <div class="label">${d.patient_code || '(no code)'}</div>
-                        <div class="meta">${dx}</div>
-                        <div class="meta">${d.submitted_at ? new Date(d.submitted_at).toLocaleString() : '-'}</div>
-                    </div>
+                    <div class="label">${d.patient_code || '(no code)'}</div>
+                    <div class="meta">${dx}</div>
+                    <div class="meta">${d.submitted_at ? new Date(d.submitted_at).toLocaleString() : '-'}</div>
                 </div>`;
         }).join('');
         queueList.querySelectorAll('.queue-item').forEach(el => {
@@ -80,7 +75,6 @@
         const diagnosis = state.queue[idx];
         renderQueue();
         renderDiagnosis(diagnosis);
-        renderSidePanel(diagnosis);
         approveBtn.disabled = false;
         rejectBtn.disabled = false;
         commentBox.value = '';
@@ -98,7 +92,6 @@
 
     function renderDiagnosis(dx) {
         const impressions = dx.colposcopic_impression || [];
-        const hasScores = dx.reid_margin != null || dx.swede_aceto != null;
 
         let html = `
             <h2>Patient ${dx.patient_code || '(no code)'}</h2>
@@ -203,20 +196,8 @@
             `;
         }
 
-        content.innerHTML = html;
-    }
-
-    function renderSidePanel(dx) {
-        sidePanel.innerHTML = `
-            <div>
-                <h4>Annotator</h4>
-                ${kv([
-                    ['ID', dx.annotator_id?.slice(0, 8) || '?'],
-                    ['Submitted', dx.submitted_at ? new Date(dx.submitted_at).toLocaleString() : '-'],
-                ])}
-            </div>
-        `;
-        annotatorLine.textContent = `Annotator: ${dx.annotator_id?.slice(0, 8) || '?'} - submitted ${dx.submitted_at ? new Date(dx.submitted_at).toLocaleString() : '-'}`;
+        diagnosisCard.innerHTML = html;
+        annotatorLine.textContent = `Annotator: ${dx.annotator_id?.slice(0, 8) || '?'} - Submitted: ${dx.submitted_at ? new Date(dx.submitted_at).toLocaleString() : '-'}`;
     }
 
     function escapeHtml(s) {
@@ -257,8 +238,7 @@
             renderQueue();
             if (state.index >= 0) selectIndex(state.index);
             else {
-                content.innerHTML = '<div class="empty-q">Queue empty.</div>';
-                sidePanel.innerHTML = '<div class="empty-q">No diagnosis selected.</div>';
+                diagnosisCard.innerHTML = '<div class="empty-q">Queue empty.</div>';
                 annotatorLine.textContent = '';
             }
         } catch (err) {

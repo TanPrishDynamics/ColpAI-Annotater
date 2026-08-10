@@ -5,6 +5,9 @@ Draft semantics:
   returns the existing draft or creates a new one.
 - PATCH autosave only mutates drafts. Submitted/superseded rows are immutable.
 - Submit flips the draft to `submitted` and bumps version on next draft.
+- A reviewer rejection supersedes the submitted row and clones it into a fresh
+  pre-filled draft version (see app/api/review.py), so the annotator corrects the
+  work they had rather than starting the image over.
 - Discard records a DiscardedImage row and superseded the user's draft (if any) for that image.
 """
 from __future__ import annotations

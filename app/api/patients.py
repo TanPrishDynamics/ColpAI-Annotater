@@ -158,8 +158,12 @@ def get_patient(patient_code: str):
     }
 
     # Reviewer rejections still awaiting a fix: the latest reject comment on this
-    # user's annotation for each image where they don't yet have a live (non-
-    # superseded) annotation -- i.e. the image was bounced back and not redone.
+    # user's annotation for each image whose live (non-superseded) annotation is
+    # still a draft -- i.e. the image was bounced back and the correction hasn't
+    # been re-submitted. A reject clones the rejected work forward into exactly
+    # such a draft (see app/api/review.py), so the flag clears only once the
+    # annotator re-submits the patient. Images with no live annotation at all
+    # (rejected then discarded) stay flagged too.
     my_rejections: dict[str, str | None] = {}
     reject_rows = db.session.execute(
         select(ImageAnnotation.image_id, ReviewAction.comment, ReviewAction.created_at)
@@ -173,7 +177,9 @@ def get_patient(patient_code: str):
     ).all()
     for image_id, comment, _created in reject_rows:
         # Only flag images still needing work, keeping the most recent comment.
-        if image_id not in my_annotations and image_id not in my_rejections:
+        if image_id in my_rejections:
+            continue
+        if my_annotations.get(image_id) in (None, AnnotationStatus.draft.value):
             my_rejections[image_id] = comment
 
     image_items = []

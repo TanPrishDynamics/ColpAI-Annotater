@@ -1,59 +1,29 @@
 {% extends "base.html" %}
-{% from "_nav.html" import logo %}
+{% from "_nav.html" import navbar %}
 {% block title %}Diagnosis Review - ColpAI{% endblock %}
 {% block body %}
+{{ navbar(user, active='review') }}
 <style>
-    .review-shell {
+    .diag-review-shell {
         display: grid;
-        grid-template-columns: 300px minmax(0, 1fr) 360px;
-        grid-template-rows: auto 1fr auto;
-        height: 100vh;
-        height: 100dvh;
-        max-width: none;
-        padding: 0;
-        margin: 0;
+        grid-template-columns: 280px minmax(0, 1fr);
+        gap: 18px;
+        padding: 24px;
+        max-width: 1400px;
+        margin: 0 auto;
     }
+    @media (max-width: 900px) { .diag-review-shell { grid-template-columns: 1fr; } }
 
-    .wb-header {
-        grid-column: 1 / -1;
+    .queue-sidebar {
+        background: var(--surface);
+        border-radius: var(--r-md);
+        border: 1px solid var(--border);
         display: flex;
-        align-items: center;
-        gap: 16px;
-        padding: 0 18px;
-        height: 54px;
-        background: var(--surface);
-        border-bottom: 1px solid var(--border);
-        z-index: 40;
-        flex-wrap: wrap;
+        flex-direction: column;
+        max-height: 80vh;
+        overflow: hidden;
     }
-    .wb-brand { display: flex; align-items: center; gap: 9px; text-decoration: none; flex-shrink: 0; }
-    .wb-brand:hover { text-decoration: none; }
-    .wb-brand span {
-        font-family: var(--font-heading);
-        font-weight: 800;
-        font-size: 15px;
-        color: var(--fg);
-        letter-spacing: -0.01em;
-    }
-    .wb-brand .wb-mode {
-        font-size: 11px;
-        font-weight: 700;
-        color: var(--accent);
-        background: var(--accent-soft);
-        border-radius: var(--r-full);
-        padding: 2px 9px;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-    }
-    .wb-right { display: flex; gap: 14px; align-items: center; margin-left: auto; font-size: 13px; color: var(--fg-muted); flex-wrap: wrap; }
-    .progress { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--fg); }
-
-    .queue {
-        background: var(--surface);
-        border-right: 1px solid var(--border);
-        overflow-y: auto;
-    }
-    .queue h3 {
+    .queue-sidebar h3 {
         font-size: 11.5px;
         text-transform: uppercase;
         letter-spacing: 0.07em;
@@ -61,17 +31,18 @@
         padding: 14px 16px;
         margin: 0;
         border-bottom: 1px solid var(--border);
-        position: sticky;
-        top: 0;
-        background: var(--surface);
-        z-index: 2;
+        font-weight: 700;
+    }
+    .queue-list {
+        overflow-y: auto;
+        flex: 1;
     }
     .queue-item {
         display: flex;
-        gap: 10px;
-        padding: 12px 16px;
+        flex-direction: column;
+        gap: 4px;
+        padding: 12px 14px;
         cursor: pointer;
-        align-items: center;
         border-bottom: 1px solid var(--border);
         border-left: 3px solid transparent;
         transition: background 0.15s ease;
@@ -81,24 +52,36 @@
         background: var(--accent-soft);
         border-left-color: var(--accent);
     }
-    .queue-item .meta { font-size: 11px; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
-    .queue-item .label { font-weight: 700; font-size: 13px; color: var(--accent); }
+    .queue-item .label { font-weight: 700; font-size: 12px; color: var(--accent); }
+    .queue-item .meta { font-size: 11px; color: var(--fg-muted); }
+    .empty-q { padding: 24px 16px; color: var(--fg-muted); font-size: 13px; text-align: center; }
 
-    .content {
-        background: var(--surface);
-        border-left: 1px solid var(--border);
-        overflow-y: auto;
-        padding: 24px;
+    .review-main {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
     }
-    .content h2 {
-        margin: 0 0 16px;
-        font-size: 18px;
+
+    .dx-card {
+        background: var(--surface);
+        border-radius: var(--r-md);
+        border: 1px solid var(--border);
+        padding: 24px;
+        margin-bottom: 18px;
+    }
+
+    .dx-card h2 {
+        margin: 0 0 20px;
+        font-size: 20px;
         font-weight: 800;
         color: var(--fg);
     }
+
     .section {
-        margin-bottom: 24px;
+        margin-bottom: 20px;
     }
+    .section:last-child { margin-bottom: 0; }
+
     .section-title {
         font-size: 11.5px;
         text-transform: uppercase;
@@ -107,9 +90,10 @@
         margin-bottom: 10px;
         font-weight: 700;
     }
+
     .kv {
         display: grid;
-        grid-template-columns: 150px 1fr;
+        grid-template-columns: 140px 1fr;
         gap: 5px 12px;
         font-size: 13px;
     }
@@ -131,45 +115,10 @@
         letter-spacing: 0.02em;
     }
 
-    .side {
-        background: var(--surface);
-        border-left: 1px solid var(--border);
-        overflow-y: auto;
-        padding: 24px;
-    }
-    .side h4 {
-        font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.07em;
-        color: var(--fg-muted); margin: 0 0 10px; font-weight: 700;
-    }
-
-    .review-actions {
-        grid-column: 1 / -1;
-        background: var(--surface);
-        border-top: 1px solid var(--border);
-        padding: 12px 18px;
-        display: flex;
-        gap: 12px;
-        align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
-    }
-    .review-actions .right { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    .review-actions textarea {
-        width: min(340px, 100%);
-        height: 42px;
-        min-height: 42px;
-        resize: none;
-        font-size: 13px;
-        padding: 10px 12px;
-    }
-    .review-actions .hint { font-size: 11.5px; color: var(--fg-faint); }
-    .empty-q { padding: 24px 16px; color: var(--fg-muted); font-size: 13px; }
-
     .score-table {
         width: 100%;
         border-collapse: collapse;
         font-size: 13px;
-        margin-top: 8px;
     }
     .score-table th, .score-table td {
         padding: 8px 12px;
@@ -185,48 +134,68 @@
         letter-spacing: 0.05em;
     }
     .score-total { font-weight: 700; color: var(--accent); }
+
+    .action-bar {
+        background: var(--surface);
+        border-radius: var(--r-md);
+        border: 1px solid var(--border);
+        padding: 16px 20px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .action-bar .left { flex: 1; color: var(--fg-muted); font-size: 13px; }
+    .action-bar .right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .action-bar textarea {
+        width: min(300px, 100%);
+        height: 42px;
+        min-height: 42px;
+        resize: none;
+        font-size: 13px;
+        padding: 10px 12px;
+    }
+    .action-bar .hint { font-size: 11px; color: var(--fg-faint); margin-top: 4px; }
 </style>
 
-<div class="review-shell">
-    <header class="wb-header">
-        <a class="wb-brand" href="/dashboard" aria-label="ColpAI dashboard">
-            {{ logo(24) }}
-            <span>ColpAI</span>
-            <span class="wb-mode">Diagnosis Review</span>
-        </a>
-        <div class="wb-right">
-            <span id="queueCount" class="progress">- pending</span>
-            <span>{{ user.username }} <span class="muted">({{ user.role.value }})</span></span>
-            <a href="/review" class="btn secondary sm">Image review</a>
-            <a href="/dashboard" class="btn secondary sm">Dashboard</a>
-        </div>
-    </header>
-
-    <nav class="queue">
-        <h3>Queue</h3>
-        <div id="queueList"><div class="empty-q">Loading...</div></div>
-    </nav>
-
-    <div class="content" id="content">
-        <div class="empty-q">Select a diagnosis to review.</div>
+<main>
+    <div class="page-head">
+        <h1>Diagnosis Review</h1>
     </div>
 
-    <aside class="side" id="side">
-        <div class="empty-q">No diagnosis selected.</div>
-    </aside>
-
-    <div class="review-actions">
-        <div class="muted" id="annotatorLine">No diagnosis selected.</div>
-        <div class="right">
-            <div>
-                <textarea id="reviewComment" placeholder="Comment (optional for approve; recommended for reject)" aria-label="Review comment"></textarea>
-                <div class="hint"><kbd>A</kbd> approve &nbsp;·&nbsp; <kbd>R</kbd> reject &nbsp;·&nbsp; <kbd>J</kbd>/<kbd>K</kbd> navigate</div>
+    <div class="diag-review-shell">
+        <!-- Queue sidebar -->
+        <div class="queue-sidebar">
+            <h3>Queue</h3>
+            <div class="queue-list" id="queueList">
+                <div class="empty-q">Loading...</div>
             </div>
-            <button class="danger" id="rejectBtn" disabled>Reject</button>
-            <button id="approveBtn" disabled>Approve</button>
+        </div>
+
+        <!-- Main review content -->
+        <div class="review-main">
+            <!-- Diagnosis card -->
+            <div class="dx-card" id="diagnosisCard">
+                <div class="empty-q">Select a diagnosis to review.</div>
+            </div>
+
+            <!-- Action bar -->
+            <div class="action-bar">
+                <div class="left" id="annotatorLine">No diagnosis selected.</div>
+                <div class="right">
+                    <div style="flex: 1;">
+                        <textarea id="reviewComment" placeholder="Comment (optional for approve; recommended for reject)" aria-label="Review comment"></textarea>
+                        <div class="hint"><kbd>A</kbd> approve &nbsp;·&nbsp; <kbd>R</kbd> reject &nbsp;·&nbsp; <kbd>J</kbd>/<kbd>K</kbd> navigate</div>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="danger" id="rejectBtn" disabled>Reject</button>
+                        <button id="approveBtn" disabled>Approve</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
-</div>
+</main>
 
 <script src="{{ url_for('static', filename='js/diagnosis_review.js') }}"></script>
 {% endblock %}
