@@ -55,8 +55,19 @@
         position: relative;
         overflow: hidden;
         filter: var(--img-filter, none);
+        overscroll-behavior: contain;
     }
-    #stage { width: 100%; height: 100%; }
+    /* touch-action:none hands every touch gesture to Konva instead of letting
+       Safari scroll/zoom the page -- without it the iPad eats the draw stroke. */
+    #stage {
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+    }
     .viewer-empty {
         position: absolute;
         inset: 0;
@@ -134,6 +145,34 @@
     .float-dock label { margin: 0; font-size: 12px; }
     .float-dock .muted-inline { color: var(--fg-muted); }
     .float-dock button { min-height: 30px; padding: 3px 10px; font-size: 12px; border-radius: var(--r-sm); }
+
+    /* Floating per-region attribute editor. Left/top come from positionRegionEditor();
+       max-height is the default cap it resets to before measuring, so it must live
+       here rather than in the element's inline style. */
+    #regionEditor {
+        position: absolute;
+        z-index: 85;
+        width: 280px;
+        max-width: calc(100% - 24px);
+        max-height: calc(100% - 24px);
+        overflow-y: auto;
+        padding: 16px;
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(12px);
+        border: 1px solid var(--border);
+        border-radius: var(--r-lg);
+        box-shadow: var(--shadow-lg);
+        transition: opacity 0.15s ease;
+    }
+
+    /* Finger-sized hit targets on tablets. */
+    @media (pointer: coarse) {
+        .tool-dock button { width: 44px; height: 44px; }
+        .tool-dock button svg { width: 22px; height: 22px; }
+        .float-dock { left: 74px; }
+        .float-dock button { min-height: 40px; padding: 6px 14px; font-size: 13px; }
+        .float-dock input[type="range"] { min-height: 32px; }
+    }
 
     .metadata-overlay {
         position: absolute;
@@ -433,6 +472,11 @@
             <button id="brushErase" class="secondary" aria-pressed="false" title="E - toggle eraser">Erase</button>
             <button id="brushClear" class="secondary" title="Clear this mask">Clear</button>
         </div>
+        <div class="polygon-dock float-dock" id="polygonDock" data-show="false">
+            <span class="muted-inline" id="polygonHint">Tap to add points, then tap the first point (or Finish).</span>
+            <button id="polygonFinish" class="secondary" title="Enter - close the polygon">Finish</button>
+            <button id="polygonCancel" class="secondary" title="Esc - discard the polygon">Cancel</button>
+        </div>
         <div class="crop-dock float-dock" id="cropDock" data-show="false">
             <span class="muted-inline">Drag to set the crop region.</span>
             <span id="cropInfo" class="muted-inline"></span>
@@ -485,7 +529,9 @@
             <button class="ctx-btn danger" data-action="delete">Delete Region</button>
         </div>
 
-        <div id="regionEditor" style="position: absolute; display: none; background: rgba(255,255,255,0.98); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px; box-shadow: var(--shadow-lg); z-index: 85; width: 280px; transform: translate(-50%, 20px);">
+        <!-- Positioned by positionRegionEditor(): parked beside the selected region so
+             it never covers the region or its resize handles. -->
+        <div id="regionEditor" style="display: none;">
             <div class="row">
                 <div>
                     <label>Lesion label</label>
@@ -818,11 +864,17 @@
             <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Redo</td></tr>
             <tr><td><kbd>[</kbd> / <kbd>]</kbd> / <kbd>Enter</kbd></td><td>Previous / next image</td></tr>
+            <tr><td><kbd>Enter</kbd></td><td>Close the polygon being drawn</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save draft</td></tr>
             <tr><td><kbd>D</kbd></td><td>Discard image</td></tr>
             <tr><td><kbd>Esc</kbd></td><td>Cancel current tool / close overlay</td></tr>
             <tr><td><kbd>?</kbd></td><td>Toggle this overlay</td></tr>
         </table>
+        <p class="muted" style="font-size: 12px; margin-top: 12px;">
+            <strong>On a tablet:</strong> drag with one finger to draw, pinch with two to
+            zoom and pan. Select a region with the Pan tool, then drag its corner handles
+            to resize. For polygons, tap each point and tap the first point again to close.
+        </p>
         <p class="muted" style="font-size: 12px; margin-top: 12px;">
             Per-image work (quality, anatomy, regions) autosaves as you go. Nothing is
             finalized until you submit the patient's diagnosis on the patient page.

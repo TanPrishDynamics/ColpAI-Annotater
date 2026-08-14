@@ -27,6 +27,11 @@
         null: '#7aa3ff',
     };
     const UNDO_LIMIT = 50;
+    // Fingers need much bigger resize handles than a mouse cursor does.
+    const COARSE_POINTER = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    const ANCHOR_SIZE = COARSE_POINTER ? 20 : 8;
+    // Tap-to-close radius for the polygon tool's first vertex, in screen px.
+    const POLY_CLOSE_PX = COARSE_POINTER ? 24 : 12;
 
     const state = {
         queue: [],
@@ -144,6 +149,27 @@
     }
 
     // ---------- Konva stage ----------
+    const clampScale = (s) => Math.max(0.1, Math.min(8, s));
+
+    // One definition for both the initial stage and the per-image rebuild, so the
+    // touch-sized anchors can't drift apart between the two.
+    function makeTransformer() {
+        return new Konva.Transformer({
+            rotateEnabled: false,
+            flipEnabled: false,          // keeps w/h positive, so no geometry normalising
+            ignoreStroke: true,
+            anchorSize: ANCHOR_SIZE,
+            anchorCornerRadius: ANCHOR_SIZE / 2,
+            anchorStrokeWidth: COARSE_POINTER ? 2 : 1,
+            padding: COARSE_POINTER ? 6 : 0,
+            borderStroke: '#4f8cff',
+            anchorStroke: '#4f8cff',
+            anchorFill: '#fff',
+            boundBoxFunc: (oldBox, newBox) =>
+                (newBox.width < 5 || newBox.height < 5) ? oldBox : newBox,
+        });
+    }
+
     function initStage() {
         if (state.stage) state.stage.destroy();
         state.stage = new Konva.Stage({
@@ -159,13 +185,7 @@
         state.stage.add(state.regionLayer);
         state.stage.add(state.toolLayer);
 
-        state.transformer = new Konva.Transformer({
-            rotateEnabled: false,
-            anchorSize: 8,
-            borderStroke: '#4f8cff',
-            anchorStroke: '#4f8cff',
-            anchorFill: '#fff',
-        });
+        state.transformer = makeTransformer();
         state.regionLayer.add(state.transformer);
 
         attachStageEvents();
@@ -177,6 +197,7 @@
         state.stage.width(stageEl.clientWidth);
         state.stage.height(stageEl.clientHeight);
         fitImage();
+        repositionRegionEditor();
     }
 
     function fitImage(animate = false) {
@@ -254,8 +275,7 @@
             };
             const direction = e.evt.deltaY > 0 ? -1 : 1;
             const factor = 1.1;
-            let newScale = direction > 0 ? oldScale * factor : oldScale / factor;
-            newScale = Math.max(0.1, Math.min(8, newScale));
+            const newScale = clampScale(direction > 0 ? oldScale * factor : oldScale / factor);
             state.scale = newScale;
             state.stage.scale({x: newScale, y: newScale});
             state.stage.position({
@@ -263,6 +283,8 @@
                 y: pointer.y - mousePointTo.y * newScale,
             });
             state.stage.batchDraw();
+            syncPolygonDots();
+            repositionRegionEditor();
         });
 
         // Space+drag pan (and native pan tool)
@@ -289,6 +311,7 @@
         state.stage.on('dragend', (e) => {
             if (e.target === state.stage) {
                 stageWrap.style.cursor = spacePressed ? 'grab' : (state.tool === 'pan' ? '' : 'crosshair');
+                repositionRegionEditor();
             }
         });
 
@@ -300,13 +323,102 @@
             }
         });
 
+        // ---------- Pointer plumbing ----------
+        // Konva 9 emits `pointer*` events for mouse, finger and stylus alike, so a
+        // single set of handlers covers all three. Touch brings two wrinkles a mouse
+        // doesn't have: extra fingers (a pinch must never draw) and no wheel (so the
+        // pinch has to drive the zoom instead).
+        let bboxStart = null, bboxRect = null;
+        let cropStart = null, cropDraft = null;
+        let masking = false, lastMaskPt = null;
+        let drawPointerId = null;   // the pointer that owns the in-flight draft
+        let touchCount = 0;         // live finger count, read straight off the TouchEvent
+
+        const pid = (e) => (e.evt && e.evt.pointerId != null) ? e.evt.pointerId : 'mouse';
+        // A draw gesture belongs to one pointer only, and never runs during a pinch.
+        const canDraw = (e) => touchCount < 2 && (drawPointerId === null || pid(e) === drawPointerId);
+
+        const finishStroke = () => {
+            if (!masking) return;
+            masking = false;
+            lastMaskPt = null;
+            scheduleMaskSave();
+        };
+
+        // Drop anything half-drawn -- a second finger landed, or a pinch began.
+        const cancelDrafts = () => {
+            if (bboxRect) { bboxRect.destroy(); bboxRect = null; bboxStart = null; }
+            if (cropDraft) { cropDraft.destroy(); cropDraft = null; cropStart = null; }
+            finishStroke();
+            drawPointerId = null;
+            state.toolLayer.batchDraw();
+        };
+
+        // ---------- Pinch zoom / two-finger pan ----------
+        // Bound natively rather than through Konva because we need the whole touch
+        // list. `touch-action: none` on #stage stops Safari claiming the gesture.
+        const container = state.stage.container();
+        let pinchDist = 0;
+        let pinchCenter = null;
+
+        const touchPoint = (t) => {
+            const r = container.getBoundingClientRect();
+            return {x: t.clientX - r.left, y: t.clientY - r.top};
+        };
+
+        container.addEventListener('touchstart', (e) => {
+            touchCount = e.touches.length;
+            if (touchCount >= 2) {
+                if (state.stage.isDragging()) state.stage.stopDrag();
+                cancelDrafts();
+                pinchDist = 0;
+                pinchCenter = null;
+            }
+        }, {passive: false});
+
+        container.addEventListener('touchmove', (e) => {
+            touchCount = e.touches.length;
+            if (touchCount < 2) return;
+            e.preventDefault();
+            const a = touchPoint(e.touches[0]);
+            const b = touchPoint(e.touches[1]);
+            const dist = Math.hypot(b.x - a.x, b.y - a.y);
+            const center = {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2};
+            if (!pinchDist) { pinchDist = dist; pinchCenter = center; return; }
+
+            // Anchor the zoom on the previous midpoint, then move the stage by however
+            // far the midpoint travelled -- that is pinch-zoom and two-finger pan in one.
+            const oldScale = state.stage.scaleX();
+            const newScale = clampScale(oldScale * (dist / pinchDist));
+            const anchor = {
+                x: (pinchCenter.x - state.stage.x()) / oldScale,
+                y: (pinchCenter.y - state.stage.y()) / oldScale,
+            };
+            state.scale = newScale;
+            state.stage.scale({x: newScale, y: newScale});
+            state.stage.position({
+                x: center.x - anchor.x * newScale,
+                y: center.y - anchor.y * newScale,
+            });
+            state.stage.batchDraw();
+            syncPolygonDots();
+            pinchDist = dist;
+            pinchCenter = center;
+        }, {passive: false});
+
+        const endTouch = (e) => {
+            touchCount = e.touches.length;
+            if (touchCount < 2) { pinchDist = 0; pinchCenter = null; repositionRegionEditor(); }
+        };
+        container.addEventListener('touchend', endTouch, {passive: false});
+        container.addEventListener('touchcancel', endTouch, {passive: false});
+
         // Tool entry points
-        let bboxStart = null;
-        let bboxRect = null;
-        state.stage.on('mousedown.bboxtool', (e) => {
-            if (state.tool !== 'bbox' || spacePressed) return;
+        state.stage.on('pointerdown.bboxtool', (e) => {
+            if (state.tool !== 'bbox' || spacePressed || !canDraw(e)) return;
             const p = imagePointer();
             if (!p) return;
+            drawPointerId = pid(e);
             bboxStart = p;
             bboxRect = new Konva.Rect({
                 x: p.x, y: p.y, width: 1, height: 1,
@@ -316,8 +428,8 @@
             });
             state.toolLayer.add(bboxRect);
         });
-        state.stage.on('mousemove.bboxtool', () => {
-            if (!bboxRect || !bboxStart) return;
+        state.stage.on('pointermove.bboxtool', (e) => {
+            if (!bboxRect || !bboxStart || !canDraw(e)) return;
             const p = imagePointer();
             if (!p) return;
             bboxRect.x(Math.min(p.x, bboxStart.x));
@@ -326,7 +438,7 @@
             bboxRect.height(Math.abs(p.y - bboxStart.y));
             state.toolLayer.batchDraw();
         });
-        state.stage.on('mouseup.bboxtool', async () => {
+        state.stage.on('pointerup.bboxtool', async () => {
             if (!bboxRect || !bboxStart) return;
             const geom = {
                 x: Math.round(bboxRect.x()),
@@ -343,89 +455,76 @@
             // After creating one bbox, stay in bbox tool for serial drawing.
         });
 
-        // Polygon tool: click to add vertex, double-click last to close.
-        state.stage.on('click.polygontool', (e) => {
-            if (state.tool !== 'polygon' || spacePressed) return;
+        // Polygon tool: tap/click to add a vertex; close by tapping the first vertex,
+        // double-tapping, hitting Enter, or pressing Finish in the polygon dock.
+        state.stage.on('pointerclick.polygontool', (e) => {
+            if (state.tool !== 'polygon' || spacePressed || touchCount >= 2) return;
             const p = imagePointer();
             if (!p) return;
             if (!state.polygonDraft) {
-                state.polygonDraft = {
-                    points: [[p.x, p.y]],
-                    line: new Konva.Line({
-                        points: [p.x, p.y, p.x, p.y],
-                        stroke: '#4f8cff',
-                        strokeWidth: 2,
-                        closed: false,
-                        listening: false,
-                    }),
-                };
-                state.toolLayer.add(state.polygonDraft.line);
+                startPolygon(p);
             } else {
+                // Measure the close test in screen px so it stays a finger-sized
+                // target no matter how far the image is zoomed in or out.
+                const [fx, fy] = state.polygonDraft.points[0];
+                const screenDist = Math.hypot(p.x - fx, p.y - fy) * (state.stage.scaleX() || 1);
+                if (state.polygonDraft.points.length >= 3 && screenDist <= POLY_CLOSE_PX) {
+                    finishPolygon();
+                    return;
+                }
                 state.polygonDraft.points.push([p.x, p.y]);
-                const flat = state.polygonDraft.points.flat();
-                state.polygonDraft.line.points([...flat, p.x, p.y]);
+                addPolygonDot(p);
+                state.polygonDraft.line.points([...state.polygonDraft.points.flat(), p.x, p.y]);
             }
+            updatePolygonDock();
             state.toolLayer.batchDraw();
         });
-        state.stage.on('mousemove.polygontool', () => {
-            if (state.tool !== 'polygon' || !state.polygonDraft) return;
+        state.stage.on('pointermove.polygontool', () => {
+            if (state.tool !== 'polygon' || !state.polygonDraft || touchCount >= 2) return;
             const p = imagePointer();
             if (!p) return;
             const flat = state.polygonDraft.points.flat();
             state.polygonDraft.line.points([...flat, p.x, p.y]);
             state.toolLayer.batchDraw();
         });
-        state.stage.on('dblclick.polygontool', async () => {
-            if (state.tool !== 'polygon' || !state.polygonDraft) return;
-            const pts = state.polygonDraft.points;
-            state.polygonDraft.line.destroy();
-            state.polygonDraft = null;
-            state.toolLayer.batchDraw();
-            if (pts.length < 3) return;
-            const geom = {points: pts.map(([x, y]) => [Math.round(x), Math.round(y)])};
-            await createRegion('polygon', geom);
+        state.stage.on('pointerdblclick.polygontool', () => {
+            if (state.tool !== 'polygon') return;
+            finishPolygon();
         });
 
         // Mask tool: brush-paint into an offscreen canvas at native resolution.
-        let masking = false;
-        let lastMaskPt = null;
-        state.stage.on('mousedown.masktool', (e) => {
-            if (state.tool !== 'mask' || spacePressed) return;
+        state.stage.on('pointerdown.masktool', (e) => {
+            if (state.tool !== 'mask' || spacePressed || !canDraw(e)) return;
             const p = imagePointer();
             if (!p) return;
             if (state.annotation && state.annotation.status && state.annotation.status !== 'draft') return;
             ensureActiveMask();
             if (!state.activeMask) return;
+            drawPointerId = pid(e);
             masking = true;
             lastMaskPt = p;
             paintDab(state.activeMask.canvas, p.x, p.y);
             updateActiveMaskDisplay();
         });
-        state.stage.on('mousemove.masktool', () => {
-            if (!masking || !state.activeMask) return;
+        state.stage.on('pointermove.masktool', (e) => {
+            if (!masking || !state.activeMask || !canDraw(e)) return;
             const p = imagePointer();
             if (!p) return;
             paintStroke(state.activeMask.canvas, lastMaskPt.x, lastMaskPt.y, p.x, p.y);
             lastMaskPt = p;
             updateActiveMaskDisplay();
         });
-        const finishStroke = () => {
-            if (!masking) return;
-            masking = false;
-            lastMaskPt = null;
-            scheduleMaskSave();
-        };
-        state.stage.on('mouseup.masktool', finishStroke);
-        state.stage.on('mouseleave.masktool', finishStroke);
+        state.stage.on('pointerup.masktool', finishStroke);
+        state.stage.on('pointerleave.masktool', finishStroke);
+        state.stage.on('pointercancel.masktool', finishStroke);
 
         // Crop tool: drag one rectangle that becomes the annotation's crop region.
-        let cropStart = null;
-        let cropDraft = null;
-        state.stage.on('mousedown.croptool', (e) => {
-            if (state.tool !== 'crop' || spacePressed) return;
+        state.stage.on('pointerdown.croptool', (e) => {
+            if (state.tool !== 'crop' || spacePressed || !canDraw(e)) return;
             if (state.annotation && state.annotation.status && state.annotation.status !== 'draft') return;
             const p = imagePointer();
             if (!p) return;
+            drawPointerId = pid(e);
             cropStart = p;
             cropDraft = new Konva.Rect({
                 x: p.x, y: p.y, width: 1, height: 1,
@@ -433,8 +532,8 @@
             });
             state.toolLayer.add(cropDraft);
         });
-        state.stage.on('mousemove.croptool', () => {
-            if (!cropDraft || !cropStart) return;
+        state.stage.on('pointermove.croptool', (e) => {
+            if (!cropDraft || !cropStart || !canDraw(e)) return;
             const p = imagePointer();
             if (!p) return;
             cropDraft.x(Math.min(p.x, cropStart.x));
@@ -443,7 +542,7 @@
             cropDraft.height(Math.abs(p.y - cropStart.y));
             state.toolLayer.batchDraw();
         });
-        state.stage.on('mouseup.croptool', () => {
+        state.stage.on('pointerup.croptool', () => {
             if (!cropDraft || !cropStart) return;
             const geom = {
                 x: Math.round(cropDraft.x()),
@@ -458,6 +557,96 @@
             if (geom.w < 4 || geom.h < 4) return;
             setCropBox(geom);
         });
+
+        // Registered last so the tool handlers above still see the owning pointer
+        // when they commit the draft.
+        state.stage.on('pointerup.draw pointercancel.draw', (e) => {
+            if (pid(e) === drawPointerId) drawPointerId = null;
+        });
+        state.stage.on('pointerleave.draw', () => { drawPointerId = null; });
+    }
+
+    // ---------- Polygon draft ----------
+    // Vertices live in image space, so their radii are divided by the stage scale to
+    // keep a constant on-screen size -- big enough to aim a finger at.
+    function polyDotRadius(index) {
+        const s = (state.stage && state.stage.scaleX()) || 1;
+        const px = index === 0 ? (COARSE_POINTER ? 9 : 6) : (COARSE_POINTER ? 6 : 4);
+        return px / s;
+    }
+
+    function addPolygonDot(p) {
+        const draft = state.polygonDraft;
+        if (!draft) return;
+        const index = draft.dots.getChildren().length;
+        draft.dots.add(new Konva.Circle({
+            x: p.x, y: p.y,
+            radius: polyDotRadius(index),
+            fill: index === 0 ? '#ffd166' : '#4f8cff',   // first vertex = the close target
+            stroke: '#fff',
+            strokeWidth: 1 / ((state.stage && state.stage.scaleX()) || 1),
+            listening: false,
+        }));
+    }
+
+    function syncPolygonDots() {
+        const draft = state.polygonDraft;
+        if (!draft) return;
+        const s = (state.stage && state.stage.scaleX()) || 1;
+        draft.dots.getChildren().forEach((c, i) => {
+            c.radius(polyDotRadius(i));
+            c.strokeWidth(1 / s);
+        });
+        state.toolLayer.batchDraw();
+    }
+
+    function startPolygon(p) {
+        state.polygonDraft = {
+            points: [[p.x, p.y]],
+            line: new Konva.Line({
+                points: [p.x, p.y, p.x, p.y],
+                stroke: '#4f8cff',
+                strokeWidth: 2,
+                closed: false,
+                listening: false,
+            }),
+            dots: new Konva.Group({listening: false}),
+        };
+        state.toolLayer.add(state.polygonDraft.line);
+        state.toolLayer.add(state.polygonDraft.dots);
+        addPolygonDot(p);
+    }
+
+    function cancelPolygon() {
+        if (!state.polygonDraft) return;
+        state.polygonDraft.line.destroy();
+        state.polygonDraft.dots.destroy();
+        state.polygonDraft = null;
+        if (state.toolLayer) state.toolLayer.batchDraw();
+        updatePolygonDock();
+    }
+
+    async function finishPolygon() {
+        if (!state.polygonDraft) return;
+        const pts = state.polygonDraft.points;
+        cancelPolygon();
+        if (pts.length < 3) return;
+        await createRegion('polygon', {points: pts.map(([x, y]) => [Math.round(x), Math.round(y)])});
+    }
+
+    function updatePolygonDock() {
+        const dock = document.getElementById('polygonDock');
+        if (!dock) return;
+        dock.style.display = state.tool === 'polygon' ? 'flex' : 'none';
+        const n = state.polygonDraft ? state.polygonDraft.points.length : 0;
+        const finish = document.getElementById('polygonFinish');
+        if (finish) finish.disabled = n < 3;
+        const hint = document.getElementById('polygonHint');
+        if (hint) {
+            hint.textContent = n === 0
+                ? 'Tap to add points, then tap the first point to close.'
+                : `${n} point${n === 1 ? '' : 's'} - tap the first point to close.`;
+        }
     }
 
     // ---------- Crop region ----------
@@ -742,11 +931,8 @@
             b.setAttribute('aria-pressed', b.dataset.tool === name ? 'true' : 'false');
         });
         // Drop any in-flight polygon when switching away.
-        if (name !== 'polygon' && state.polygonDraft) {
-            state.polygonDraft.line.destroy();
-            state.polygonDraft = null;
-            state.toolLayer.batchDraw();
-        }
+        if (name !== 'polygon') cancelPolygon();
+        updatePolygonDock();
         // Commit any in-progress mask paint when leaving the mask tool.
         if (name !== 'mask') commitActiveMask();
         // Region drag/transform only when in pan tool (masks never drag).
@@ -826,22 +1012,37 @@
             if (state.tool !== 'pan') return;
             selectRegion(region.id);
         });
+        node.on('dragstart transformstart', () => setEditorGhosted(true));
+        node.on('dragend transformend', () => setEditorGhosted(false));
         node.on('dragend', async (e) => {
             if (region.region_type === 'mask') return;  // masks are full-frame, not draggable
             const geom = readGeometry(node, region.region_type);
             await patchRegion(region.id, {geometry: geom});
         });
+        // Resize handles write the transformer's scale back into real geometry --
+        // Konva scales the node, the server only ever stores pixel coordinates.
         node.on('transformend', async (e) => {
-            if (region.region_type !== 'bbox') return;
-            const g = {
-                x: Math.round(node.x()),
-                y: Math.round(node.y()),
-                w: Math.round(node.width() * node.scaleX()),
-                h: Math.round(node.height() * node.scaleY()),
-            };
-            node.scale({x: 1, y: 1});
-            node.width(g.w); node.height(g.h);
-            await patchRegion(region.id, {geometry: g});
+            if (region.region_type === 'bbox') {
+                const g = {
+                    x: Math.round(node.x()),
+                    y: Math.round(node.y()),
+                    w: Math.round(node.width() * node.scaleX()),
+                    h: Math.round(node.height() * node.scaleY()),
+                };
+                node.scale({x: 1, y: 1});
+                node.width(g.w); node.height(g.h);
+                await patchRegion(region.id, {geometry: g});
+            } else if (region.region_type === 'polygon') {
+                const sx = node.scaleX(), sy = node.scaleY();
+                const ox = node.x(), oy = node.y();
+                const flat = node.points();
+                const points = [];
+                for (let i = 0; i < flat.length; i += 2) {
+                    points.push([Math.round(ox + flat[i] * sx), Math.round(oy + flat[i + 1] * sy)]);
+                }
+                node.scale({x: 1, y: 1});
+                await patchRegion(region.id, {geometry: {points}});
+            }
         });
 
         // Hover Tooltip
@@ -929,7 +1130,8 @@
             if (row) row.setAttribute('aria-selected', 'true');
             const node = state.nodes.get(id);
             const region = state.regions.get(id);
-            if (node && region && region.region_type === 'bbox' && state.tool === 'pan') {
+            const resizable = region && (region.region_type === 'bbox' || region.region_type === 'polygon');
+            if (node && resizable && state.tool === 'pan') {
                 state.transformer.nodes([node]);
             }
         }
@@ -989,11 +1191,7 @@
             return;
         }
         editor.style.display = 'block';
-        
-        // Position it strictly in the center
-        editor.style.left = '50%';
-        editor.style.top = '50%';
-        editor.style.transform = 'translate(-50%, -50%)';
+        positionRegionEditor(editor, state.nodes.get(state.selectedRegionId));
 
         editor.querySelectorAll('[data-rfield]').forEach(el => {
             const key = el.dataset.rfield;
@@ -1001,6 +1199,86 @@
             if (el.type === 'checkbox') el.checked = !!val;
             else el.value = val == null ? '' : String(val);
         });
+    }
+
+    // Park the editor beside the selected region rather than on top of it -- it used
+    // to sit dead-centre, which covered the region and its resize handles. Tries
+    // right, left, below, above; if the panel fits nowhere it goes to the corner
+    // with the most clearance.
+    function positionRegionEditor(editor, node) {
+        const GAP = 12;
+        const MIN_H = 160;   // below this the panel is too short to be worth scrolling
+        const clamp = (v, lo, hi) => Math.max(lo, Math.min(Math.max(lo, hi), v));
+        const wrapW = stageWrap.clientWidth;
+        const wrapH = stageWrap.clientHeight;
+
+        // Drop any height cap left over from the previous selection before measuring,
+        // falling back to the max-height in the stylesheet.
+        editor.style.maxHeight = '';
+        const ew = editor.offsetWidth;
+        let eh = editor.offsetHeight;
+
+        // Keep clear of the tool dock, which is pinned to the top-left of the stage.
+        const dock = document.getElementById('toolDock');
+        const minX = dock ? dock.offsetLeft + dock.offsetWidth + GAP : GAP;
+        const maxX = wrapW - ew - GAP;
+
+        const place = (x, y) => {
+            editor.style.left = clamp(x, minX, maxX) + 'px';
+            editor.style.top = clamp(y, GAP, wrapH - eh - GAP) + 'px';
+        };
+
+        if (!node) { place(maxX, GAP); return; }
+
+        // Region box in stage-container px, grown to cover the transformer handles.
+        const r = node.getClientRect();
+        const pad = ANCHOR_SIZE;
+        const box = {left: r.x - pad, top: r.y - pad, right: r.x + r.width + pad, bottom: r.y + r.height + pad};
+
+        const centredY = clamp((box.top + box.bottom) / 2 - eh / 2, GAP, wrapH - eh - GAP);
+        const centredX = clamp((box.left + box.right) / 2 - ew / 2, minX, maxX);
+        const candidates = [
+            {x: box.right + GAP, y: centredY},        // right of the region
+            {x: box.left - GAP - ew, y: centredY},    // left of it
+            {x: centredX, y: box.bottom + GAP},       // below it
+            {x: centredX, y: box.top - GAP - eh},     // above it
+        ];
+        const fits = (c) => c.x >= minX && c.y >= GAP && c.x + ew <= wrapW - GAP && c.y + eh <= wrapH - GAP;
+
+        const spot = candidates.find(fits);
+        if (spot) { place(spot.x, spot.y); return; }
+
+        // Nothing fits at full height -- e.g. a wide band across the middle. Hand the
+        // panel the taller free strip above or below the region and let it scroll.
+        const above = box.top - GAP * 2;
+        const below = wrapH - box.bottom - GAP * 2;
+        if (Math.max(above, below) >= MIN_H) {
+            editor.style.maxHeight = Math.max(above, below) + 'px';
+            eh = editor.offsetHeight;   // re-measure now that it's capped
+            place(centredX, below >= above ? box.bottom + GAP : box.top - GAP - eh);
+            return;
+        }
+
+        // The region covers nearly the whole stage; take the corner with most room.
+        place((wrapW - box.right) >= (box.left - minX) ? maxX : minX,
+              (wrapH - box.bottom) >= box.top ? wrapH - eh - GAP : GAP);
+    }
+
+    // Zooming/panning moves the region under the panel, so re-park it afterwards.
+    // Position only -- never re-read the field values, or it would clobber typing.
+    function repositionRegionEditor() {
+        const editor = document.getElementById('regionEditor');
+        if (!editor || editor.style.display !== 'block') return;
+        positionRegionEditor(editor, state.nodes.get(state.selectedRegionId));
+    }
+
+    // Fade the editor out while a region is actually being dragged or resized, so it
+    // can never sit under the finger mid-gesture.
+    function setEditorGhosted(on) {
+        const editor = document.getElementById('regionEditor');
+        if (!editor) return;
+        editor.style.opacity = on ? '0' : '1';
+        editor.style.pointerEvents = on ? 'none' : 'auto';
     }
 
     function bindRegionEditor() {
@@ -1175,13 +1453,13 @@
 
     // ---------- Image load ----------
     async function loadImageOnStage(image) {
-        // Clear previous image + regions.
+        // Clear previous image + regions. The tool layer holds any in-flight draft,
+        // which must not survive into the next image.
+        cancelPolygon();
+        state.toolLayer.destroyChildren();
         state.imageLayer.destroyChildren();
         state.regionLayer.destroyChildren();
-        state.regionLayer.add(state.transformer = new Konva.Transformer({
-            rotateEnabled: false, anchorSize: 8,
-            borderStroke: '#4f8cff', anchorStroke: '#4f8cff', anchorFill: '#fff',
-        }));
+        state.regionLayer.add(state.transformer = makeTransformer());
         state.nodes.clear();
         state.regions.clear();
         state.maskCanvases.clear();
@@ -1437,6 +1715,12 @@
     const brushClear = document.getElementById('brushClear');
     if (brushClear) brushClear.addEventListener('click', clearActiveMask);
 
+    // ---------- Polygon dock buttons ----------
+    // Touch has no reliable double-click, so the dock is the primary way to close a
+    // polygon on a tablet; the keyboard and double-tap paths still work too.
+    document.getElementById('polygonFinish')?.addEventListener('click', finishPolygon);
+    document.getElementById('polygonCancel')?.addEventListener('click', cancelPolygon);
+
     // ---------- Crop dock buttons ----------
     const cropClearBtn = document.getElementById('cropClear');
     if (cropClearBtn) cropClearBtn.addEventListener('click', clearCrop);
@@ -1525,14 +1809,14 @@
         });
     });
 
-    // Close menus on general canvas click/drag
-    stageEl.addEventListener('mousedown', () => {
+    // Close menus on general canvas click/drag (pointerdown so a tap counts too)
+    stageEl.addEventListener('pointerdown', () => {
         const menu = document.getElementById('contextMenu');
         if (menu) menu.style.display = 'none';
     });
 
-    // Close region editor when clicking outside of it
-    document.addEventListener('mousedown', (e) => {
+    // Close region editor when clicking/tapping outside of it
+    document.addEventListener('pointerdown', (e) => {
         const editor = document.getElementById('regionEditor');
         if (editor && editor.style.display === 'block') {
             if (editor.contains(e.target)) return;
@@ -1550,12 +1834,7 @@
         if (e.target.matches('input, textarea, select')) return;
         if (e.key === '?') { overlay.dataset.open = overlay.dataset.open === 'true' ? 'false' : 'true'; return; }
         if (e.key === 'Escape') {
-            if (state.polygonDraft) {
-                state.polygonDraft.line.destroy();
-                state.polygonDraft = null;
-                state.toolLayer.batchDraw();
-                return;
-            }
+            if (state.polygonDraft) { cancelPolygon(); return; }
             overlay.dataset.open = 'false';
             return;
         }
@@ -1584,6 +1863,8 @@
             }
             return;
         }
+        // Enter closes an in-flight polygon before it means "next image".
+        if (e.key === 'Enter' && state.polygonDraft) { e.preventDefault(); finishPolygon(); return; }
         if (e.key === 'Enter') { e.preventDefault(); document.getElementById('nextBtn').click(); return; }
         const lower = e.key.toLowerCase();
         if (lower === 'v') { setTool('pan'); return; }
