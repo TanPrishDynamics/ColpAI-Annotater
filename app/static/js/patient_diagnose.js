@@ -28,6 +28,12 @@
     const consensusContent = document.getElementById('consensusContent');
     const REID_FIELDS = ['reid_margin', 'reid_color', 'reid_vessels', 'reid_iodine'];
     const SWEDE_FIELDS = ['swede_aceto', 'swede_margin', 'swede_vessels', 'swede_size', 'swede_iodine'];
+    const SCORE_LABEL = {
+        reid_margin: 'Reid \u00b7 Margin', reid_color: 'Reid \u00b7 Colour', reid_vessels: 'Reid \u00b7 Vessels',
+        reid_iodine: 'Reid \u00b7 Iodine staining', swede_aceto: 'Swede \u00b7 Acetowhite uptake',
+        swede_margin: 'Swede \u00b7 Margins & surface', swede_vessels: 'Swede \u00b7 Vessels',
+        swede_size: 'Swede \u00b7 Lesion size', swede_iodine: 'Swede \u00b7 Iodine staining',
+    };
     // Screening-context selects: single-value enums, saved on change like histopathology.
     const CONTEXT_SELECTS = ['cytology_result', 'hpv_status', 'management_recommendation'];
     const IMAGE_TYPE_LABEL = {
@@ -79,13 +85,17 @@
         renderReviewerBanner(images);
         imageGrid.innerHTML = images.map(img => {
             const flagged = !!img.needs_redo;
-            const tip = flagged
-                ? 'Reviewer asked you to redo this' + (img.reviewer_rejection ? ': ' + img.reviewer_rejection : '')
-                : img.dataset_source;
+            // Compulsory fields the draft still lacks (server-computed; null = no draft).
+            const missing = Array.isArray(img.missing_fields) ? img.missing_fields.length : 0;
+            let tip = img.dataset_source;
+            if (flagged) tip = 'Reviewer asked you to redo this' + (img.reviewer_rejection ? ': ' + img.reviewer_rejection : '');
+            else if (missing) tip = `${missing} compulsory field${missing === 1 ? '' : 's'} still empty \u2014 open to finish`;
+            const cls = 'img-card' + (flagged ? ' rejected' : '') + (missing ? ' incomplete' : '');
             return `
-            <a class="img-card${flagged ? ' rejected' : ''}" href="/annotate/${img.id}" title="${esc(tip)}">
+            <a class="${cls}" href="/annotate/${img.id}" title="${esc(tip)}">
                 <img src="/api/v1/images/${img.id}/file" loading="lazy" alt="">
                 ${statusChip(img.my_annotation_status)}
+                ${missing ? `<span class="incomplete-flag">${missing} left</span>` : ''}
                 ${img.image_phase ? `<span class="type-chip">${IMAGE_TYPE_LABEL[img.image_phase] || img.image_phase}</span>` : ''}
                 ${flagged ? '<span class="reject-flag" title="Reviewer rejected — redo needed">↩ redo</span>' : ''}
             </a>`;
@@ -139,11 +149,6 @@
             if (el) el.value = diagnosis?.[field] ?? '';
         }
         updateScoreTotals();
-        // Expand any collapsed score section that already holds values.
-        document.querySelectorAll('details.score-section').forEach(d => {
-            const hasValue = [...d.querySelectorAll('select')].some(s => s.value !== '');
-            if (hasValue) d.open = true;
-        });
 
         const isSubmitted = diagnosis?.status && diagnosis.status !== 'draft';
         dxForm.disabled = !!isSubmitted;
@@ -184,11 +189,22 @@
         if (t <= 7) return 'Intermediate';
         return 'Likely high-grade (consider biopsy/treatment)';
     }
+    function missingScoreFields() {
+        return [...REID_FIELDS, ...SWEDE_FIELDS].filter(f => {
+            const el = document.getElementById(f);
+            return el && el.value === '';
+        });
+    }
+
     function updateScoreTotals() {
         const get = f => {
             const el = document.getElementById(f);
             return (el && el.value !== '') ? Number(el.value) : null;
         };
+        const missing = new Set(missingScoreFields());
+        for (const f of [...REID_FIELDS, ...SWEDE_FIELDS]) {
+            document.getElementById(f)?.classList.toggle('is-missing', missing.has(f));
+        }
         const sets = [
             {parts: REID_FIELDS, max: 8, tot: 'reidTotal', intp: 'reidInterp', fn: interpretReid},
             {parts: SWEDE_FIELDS, max: 10, tot: 'swedeTotal', intp: 'swedeInterp', fn: interpretSwede},
@@ -270,9 +286,42 @@
         flushSave();
     });
 
+    function clearSubmitError() {
+        document.getElementById('submitError')?.remove();
+    }
+
+    function showSubmitError(html) {
+        clearSubmitError();
+        const box = document.createElement('div');
+        box.id = 'submitError';
+        box.className = 'alert error';
+        box.style.marginTop = '12px';
+        box.innerHTML = html;
+        dxForm.after(box);
+        box.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    }
+
+    // Everything the server will refuse without, checked locally first so the
+    // annotator gets pointed at the exact control instead of a round-trip.
+    function localSubmitProblems() {
+        const problems = [];
+        if (!document.querySelector('.dx-btn[aria-pressed="true"]')) problems.push('Colposcopic impression');
+        for (const f of missingScoreFields()) problems.push(SCORE_LABEL[f] || f);
+        return problems;
+    }
+
     document.getElementById('submitBtn').addEventListener('click', async () => {
         if (state.saveTimer) { clearTimeout(state.saveTimer); state.saveTimer = null; }
         await flushSave();
+        clearSubmitError();
+
+        const problems = localSubmitProblems();
+        if (problems.length) {
+            showSubmitError('<strong>Not submitted \u2014 compulsory fields are empty:</strong> ' + esc(problems.join(', ')) + '.');
+            const first = missingScoreFields()[0];
+            if (first) document.getElementById(first)?.focus();
+            return;
+        }
         try {
             await ensureDiagnosis();
             setPill('Submitting...', 'saving');
@@ -294,8 +343,22 @@
             renderImages(refreshed.images);
         } catch (err) {
             setPill('Error - retry', 'error');
+            if (err.body?.error?.code === 'incomplete_annotations') {
+                // One line per image so the annotator can jump straight to it.
+                const items = err.body.error.details || [];
+                const rows = items.map(d =>
+                    `<li><a href="/annotate/${esc(d.image_id)}">Open image</a> \u2014 missing: ${esc(d.msg)}</li>`
+                ).join('');
+                showSubmitError(`<strong>${esc(err.body.error.message)}</strong><ul style="margin:8px 0 0 18px; padding:0;">${rows}</ul>`);
+                // Re-render the grid so the "N left" flags match the server.
+                try {
+                    const refreshed = await api(`/api/v1/patients/${encodeURIComponent(patientCode)}`);
+                    renderImages(refreshed.images);
+                } catch (_) {}
+                return;
+            }
             const detail = err.body?.error?.details?.[0]?.msg || err.body?.error?.message;
-            alert('Submit failed: ' + (detail || err.message));
+            showSubmitError('<strong>Submit failed:</strong> ' + esc(detail || err.message));
         }
     });
 

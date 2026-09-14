@@ -339,6 +339,61 @@
     .side select { padding-right: 30px; }
     .side textarea { resize: vertical; min-height: 64px; }
 
+    /* Compulsory fields. Every one must be filled before the patient can be
+       submitted; the highlight tracks which are still empty. */
+    .req { color: var(--danger); font-weight: 700; margin-left: 2px; }
+    .side [data-required].is-missing, .side #imageTypeSelect.is-missing,
+    #regionEditor [data-required].is-missing {
+        border-color: var(--warning);
+        box-shadow: inset 3px 0 0 var(--warning);
+    }
+    /* Region rows whose editor still has empty compulsory fields. */
+    .region-row .left-badge {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 0 6px;
+        border-radius: var(--r-full);
+        background: var(--warning);
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 15px;
+        vertical-align: 1px;
+    }
+    /* Shown when Next is refused; cleared as soon as the image is complete. */
+    .next-blocked {
+        display: inline-flex;
+        align-items: center;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--warning);
+        background: var(--warning-soft);
+        border: 1px solid var(--warning-border);
+        border-radius: var(--r-sm);
+        padding: 6px 10px;
+        max-width: 420px;
+    }
+    .next-blocked[hidden] { display: none; }
+    #regionEditor .req-hint { font-size: 11px; color: var(--fg-muted); margin-top: -4px; }
+    .tab-btn .tab-badge {
+        display: inline-block;
+        min-width: 18px;
+        padding: 1px 6px;
+        margin-left: 6px;
+        border-radius: var(--r-full);
+        background: var(--warning);
+        color: #fff;
+        font-size: 10.5px;
+        font-weight: 700;
+        line-height: 16px;
+        text-align: center;
+    }
+    .tab-btn .tab-badge:empty { display: none; }
+    .req-legend { font-size: 11.5px; color: var(--fg-muted); padding: 8px 20px 0; }
+    .pill.incomplete { background: var(--warning-soft); color: var(--warning); border-color: var(--warning-border); }
+    .pill.complete { background: var(--success-soft); color: var(--success); border-color: var(--success-border); }
+    .pill[hidden] { display: none; }
+
     /* Region list */
     .region-list { display: flex; flex-direction: column; gap: 6px; }
     .region-row {
@@ -434,6 +489,7 @@
         <div class="wb-right">
             <span class="progress" id="progress">- / -</span>
             <span class="pill" id="statusPill">Idle</span>
+            <span class="pill" id="requiredPill" title="Compulsory fields still empty on this image" hidden></span>
             <span class="wb-user">{{ user.username }} <span class="muted">({{ user.role.value }})</span></span>
             <a href="/patients" class="btn secondary sm">Patients</a>
             <a href="/dashboard" class="btn secondary sm">Dashboard</a>
@@ -534,8 +590,8 @@
         <div id="regionEditor" style="display: none;">
             <div class="row">
                 <div>
-                    <label>Lesion label</label>
-                    <select data-rfield="lesion_label">
+                    <label>Lesion label<span class="req">*</span></label>
+                    <select data-rfield="lesion_label" data-required>
                         <option value="">-</option>
                         <option value="NORMAL">NORMAL</option>
                         <option value="CIN1">CIN1</option>
@@ -550,18 +606,18 @@
                 </div>
                 <div class="row-2">
                     <div>
-                        <label>Clock (1-12)</label>
-                        <input type="number" min="1" max="12" data-rfield="lesion_location_clock">
+                        <label>Clock (1-12)<span class="req">*</span></label>
+                        <input type="number" min="1" max="12" data-rfield="lesion_location_clock" data-required>
                     </div>
                     <div>
-                        <label>Size %</label>
-                        <input type="number" min="0" max="100" data-rfield="lesion_size_percent">
+                        <label>Size %<span class="req">*</span></label>
+                        <input type="number" min="0" max="100" data-rfield="lesion_size_percent" data-required>
                     </div>
                 </div>
                 <div class="row-2">
                     <div>
-                        <label>Quadrant</label>
-                        <select data-rfield="lesion_quadrant">
+                        <label>Quadrant<span class="req">*</span></label>
+                        <select data-rfield="lesion_quadrant" data-required>
                             <option value="">-</option>
                             <option value="anterior">Anterior</option>
                             <option value="posterior">Posterior</option>
@@ -571,8 +627,8 @@
                         </select>
                     </div>
                     <div>
-                        <label>Margins</label>
-                        <select data-rfield="lesion_margins">
+                        <label>Margins<span class="req">*</span></label>
+                        <select data-rfield="lesion_margins" data-required>
                             <option value="">-</option>
                             <option value="sharp">Sharp</option>
                             <option value="irregular">Irregular</option>
@@ -581,25 +637,26 @@
                 </div>
                 <div class="row-2">
                     <label class="check"><input type="checkbox" data-rfield="punctation_present"> Punctation</label>
-                    <input type="number" min="1" max="3" placeholder="severity" data-rfield="punctation_severity">
+                    <input type="number" min="1" max="3" placeholder="severity (1-3)" data-rfield="punctation_severity" data-required-if="punctation_present">
                 </div>
                 <div class="row-2">
                     <label class="check"><input type="checkbox" data-rfield="mosaic_present"> Mosaic</label>
-                    <input type="number" min="1" max="3" placeholder="severity" data-rfield="mosaic_severity">
+                    <input type="number" min="1" max="3" placeholder="severity (1-3)" data-rfield="mosaic_severity" data-required-if="mosaic_present">
                 </div>
                 <div>
                     <label>Notes</label>
                     <textarea data-rfield="region_notes" placeholder="Per-region observations..." rows="1"></textarea>
                 </div>
+                <div class="req-hint"><span class="req">*</span> compulsory for every region; severity is compulsory when its box is ticked.</div>
             </div>
         </div>
     </div>
 
     <aside class="side">
         <div class="tabs-header">
-            <button class="tab-btn active" onclick="switchTab('tab-regions')" type="button">Regions</button>
-            <button class="tab-btn" onclick="switchTab('tab-quality')" type="button">QA &amp; Anatomy</button>
-            <button class="tab-btn" onclick="switchTab('tab-features')" type="button">Colposcopic Features</button>
+            <button class="tab-btn active" onclick="switchTab('tab-regions')" type="button">Regions<span class="tab-badge" data-tab-badge="tab-regions"></span></button>
+            <button class="tab-btn" onclick="switchTab('tab-quality')" type="button">QA &amp; Anatomy<span class="tab-badge" data-tab-badge="tab-quality"></span></button>
+            <button class="tab-btn" onclick="switchTab('tab-features')" type="button">Colposcopic Features<span class="tab-badge" data-tab-badge="tab-features"></span></button>
         </div>
 
         <div class="tab-content active" id="tab-regions">
@@ -632,13 +689,14 @@
         </div> <!-- End of tab-regions -->
 
         <div class="tab-content" id="tab-quality">
+        <div class="req-legend"><span class="req">*</span> compulsory &mdash; every marked field must be filled before the patient can be submitted.</div>
 
         <div class="group">
             <details open>
                 <summary>Image type</summary>
                 <div class="group-body row">
                     <div>
-                        <label>Type <span class="muted">(baseline, acetic acid, Lugol's iodine, green filter...)</span></label>
+                        <label>Type<span class="req">*</span> <span class="muted">(baseline, acetic acid, Lugol's iodine, green filter...)</span></label>
                         <select id="imageTypeSelect">
                             <option value="">-</option>
                             <option value="native">Baseline / native</option>
@@ -694,8 +752,8 @@
                 <summary>Anatomy</summary>
                 <div class="group-body row">
                     <div>
-                        <label>SCJ visibility</label>
-                        <select data-field="anatomy.scj_visibility">
+                        <label>SCJ visibility<span class="req">*</span></label>
+                        <select data-field="anatomy.scj_visibility" data-required>
                             <option value="">-</option>
                             <option value="fully_visible">Fully visible</option>
                             <option value="partial">Partial</option>
@@ -704,8 +762,8 @@
                     </div>
                     <div class="row-2">
                         <div>
-                            <label>TZ type</label>
-                            <select data-field="anatomy.transformation_zone_type">
+                            <label>TZ type<span class="req">*</span></label>
+                            <select data-field="anatomy.transformation_zone_type" data-required>
                                 <option value="">-</option>
                                 <option value="TZ1">TZ1</option>
                                 <option value="TZ2">TZ2</option>
@@ -714,8 +772,8 @@
                             </select>
                         </div>
                         <div>
-                            <label>TZ visibility</label>
-                            <select data-field="anatomy.tz_visibility">
+                            <label>TZ visibility<span class="req">*</span></label>
+                            <select data-field="anatomy.tz_visibility" data-required>
                                 <option value="">-</option>
                                 <option value="fully_visible">Fully visible</option>
                                 <option value="partial">Partial</option>
@@ -730,13 +788,14 @@
         </div> <!-- End of tab-quality -->
 
         <div class="tab-content" id="tab-features">
+        <div class="req-legend"><span class="req">*</span> compulsory &mdash; every marked field must be filled before the patient can be submitted.</div>
         <div class="group">
             <details open>
                 <summary>IFCPC assessment <span class="muted" style="text-transform: none; letter-spacing: 0;">(this image)</span></summary>
                 <div class="group-body row">
                     <div>
-                        <label>Colposcopic finding grade</label>
-                        <select data-field="assessment.ifcpc_grade">
+                        <label>Colposcopic finding grade<span class="req">*</span></label>
+                        <select data-field="assessment.ifcpc_grade" data-required>
                             <option value="">-</option>
                             <option value="normal">Normal</option>
                             <option value="minor">Minor (grade 1)</option>
@@ -746,8 +805,8 @@
                         </select>
                     </div>
                     <div>
-                        <label>Colposcopy adequacy</label>
-                        <select data-field="assessment.colposcopy_adequacy">
+                        <label>Colposcopy adequacy<span class="req">*</span></label>
+                        <select data-field="assessment.colposcopy_adequacy" data-required>
                             <option value="">-</option>
                             <option value="adequate">Adequate</option>
                             <option value="inadequate">Inadequate</option>
@@ -762,17 +821,17 @@
                 <div class="group-body row">
                     <div class="row-2">
                         <div>
-                            <label>Acetowhitening (0-3)</label>
-                            <input type="number" min="0" max="3" data-field="features.acetowhitening_severity">
+                            <label>Acetowhitening (0-3)<span class="req">*</span></label>
+                            <input type="number" min="0" max="3" data-field="features.acetowhitening_severity" data-required>
                         </div>
                         <div>
-                            <label>Iodine (0-2)</label>
-                            <input type="number" min="0" max="2" data-field="features.iodine_pattern">
+                            <label>Iodine (0-2)<span class="req">*</span></label>
+                            <input type="number" min="0" max="2" data-field="features.iodine_pattern" data-required>
                         </div>
                     </div>
                     <div>
-                        <label>Vascular pattern</label>
-                        <select data-field="features.vascular_pattern">
+                        <label>Vascular pattern<span class="req">*</span></label>
+                        <select data-field="features.vascular_pattern" data-required>
                             <option value="">-</option>
                             <option value="normal">Normal</option>
                             <option value="fine_punctation">Fine punctation</option>
@@ -784,19 +843,18 @@
                     </div>
                     <div class="row-2">
                         <div>
-                            <label>Color tone</label>
-                            <select data-field="features.color_tone">
+                            <label>Color tone<span class="req">*</span></label>
+                            <select data-field="features.color_tone" data-required>
                                 <option value="">-</option>
                                 <option value="pink">Pink</option>
                                 <option value="pale">Pale</option>
                                 <option value="dense_white">Dense white</option>
                                 <option value="yellow">Yellow</option>
-                                <option value="grey_white">Grey white</option>
                             </select>
                         </div>
                         <div>
-                            <label>Surface contour</label>
-                            <select data-field="features.surface_contour">
+                            <label>Surface contour<span class="req">*</span></label>
+                            <select data-field="features.surface_contour" data-required>
                                 <option value="">-</option>
                                 <option value="smooth">Smooth</option>
                                 <option value="micropapillary">Micropapillary</option>
@@ -805,7 +863,7 @@
                             </select>
                         </div>
                     </div>
-                    <label class="check"><input type="checkbox" data-field="features.atypical_vessels_present"> Atypical vessels present</label>
+                    <label class="check"><input type="checkbox" data-field="features.atypical_vessels_present"> Atypical vessels present <span class="muted">(unchecked = absent)</span></label>
                 </div>
             </details>
         </div>
@@ -848,9 +906,10 @@
             <button class="ghost" id="shortcutsBtn" title="?">Shortcuts</button>
         </div>
         <div class="right">
+            <span class="next-blocked" id="nextBlocked" role="alert" hidden></span>
             <button class="danger" id="discardBtn">Discard</button>
             <button class="secondary" id="saveBtn" title="Ctrl+S">Save draft</button>
-            <button id="nextBtn" title="] / Enter">Next &rarr;</button>
+            <button id="nextBtn" title="] / Enter &mdash; every compulsory field must be filled first">Next &rarr;</button>
         </div>
     </div>
 </div>

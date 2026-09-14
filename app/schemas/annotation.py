@@ -72,10 +72,14 @@ class AnnotationCreate(BaseModel):
 class AnnotationPatch(BaseModel):
     """Autosave body, also used as the submit body (POST /annotations/{id}/submit).
 
-    Every block is optional; partial blocks are allowed. The FINAL diagnosis,
-    histopathology, confidence, and Reid/Swede scoring all live at the patient
-    level now (see app/schemas/patient.py) -- nothing diagnostic remains here, so
-    submit has no required fields.
+    Every block is optional on autosave; partial blocks are allowed so a draft can
+    be saved at any point. The FINAL diagnosis, histopathology, confidence, and
+    Reid/Swede scoring all live at the patient level (see app/schemas/patient.py).
+
+    Finalizing (per-image submit, or the patient diagnosis submit that finalizes
+    every draft) is a different matter: it's refused until the compulsory field
+    set in app/services/completeness.py is filled, so the training set never
+    carries half-annotated rows.
     """
     quality: QualityBlock | None = None
     anatomy: AnatomyBlock | None = None

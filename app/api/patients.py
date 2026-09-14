@@ -9,6 +9,10 @@ mechanism, not reviewer approval):
   (draft -> submitted) every one of this annotator's ImageAnnotation drafts for the
   patient's images -- there's no per-image submit; annotators just autosave their
   way through the images and everything is finalized together at the end.
+- Submit is refused (422, `incomplete_annotations`) while any of those drafts is
+  missing a compulsory field (see app/services/completeness.py), and while the
+  diagnosis itself lacks impression / confidence / Reid / Swede. Every exported
+  row therefore carries the full column set.
 
 Images without a `patient_code` have no patient diagnosis -- every endpoint here
 404s for a code with no images.
@@ -26,8 +30,8 @@ from app.extensions import db
 from app.models import Image, ImageAnnotation, PatientConsensus, PatientDiagnosis, ReviewAction
 from app.models.enums import AnnotationStatus, ReviewActionType
 from app.schemas.image import ImageOut
-from app.schemas.patient import PatientDiagnosisPatch, PatientDiagnosisSubmit
-from app.services import consensus
+from app.schemas.patient import PatientDiagnosisPatch, PatientDiagnosisSubmit, SUBMIT_REQUIRED_FIELDS
+from app.services import completeness, consensus
 
 bp = Blueprint('patients', __name__, url_prefix='/api/v1/patients')
 
@@ -75,13 +79,9 @@ def _consensus_dict(patient_code: str) -> dict | None:
     return row.to_dict() if row is not None else None
 
 
-def _finalize_image_annotations(patient_code: str) -> int:
-    """Submit every draft ImageAnnotation the current user has for this patient's
-    images. There's no per-image submit anymore -- the annotator just autosaves
-    drafts while working through the images, and everything is finalized together
-    here, when the patient's diagnosis is submitted. Images the annotator never
-    opened (no draft) are left alone. Returns how many were finalized."""
-    drafts = db.session.execute(
+def _my_image_drafts(patient_code: str) -> list[ImageAnnotation]:
+    """Every draft ImageAnnotation the current user has for this patient's images."""
+    return db.session.execute(
         select(ImageAnnotation).where(and_(
             ImageAnnotation.annotator_id == current_user.id,
             ImageAnnotation.status == AnnotationStatus.draft,
@@ -90,8 +90,32 @@ def _finalize_image_annotations(patient_code: str) -> int:
             ),
         ))
     ).scalars().all()
+
+
+def _incomplete_drafts(drafts: list[ImageAnnotation]) -> list[dict]:
+    """Drafts still missing a compulsory field, with what's missing on each."""
+    out = []
+    for ann in drafts:
+        missing = completeness.missing_fields(ann)
+        if missing:
+            out.append({
+                'image_id': ann.image_id,
+                'annotation_id': ann.id,
+                'missing_fields': missing,
+                'msg': completeness.describe_missing(missing),
+            })
+    return out
+
+
+def _finalize_image_annotations(drafts: list[ImageAnnotation]) -> int:
+    """Submit the given drafts. There's no per-image submit anymore -- the
+    annotator just autosaves drafts while working through the images, and
+    everything is finalized together here, when the patient's diagnosis is
+    submitted. Images the annotator never opened (no draft) are left alone.
+    Callers check `_incomplete_drafts` first. Returns how many were finalized."""
     now = _utcnow()
     for ann in drafts:
+        completeness.normalize_checkboxes(ann)
         ann.status = AnnotationStatus.submitted
         ann.submitted_at = now
     return len(drafts)
@@ -146,8 +170,8 @@ def get_patient(patient_code: str):
     ).scalars().all()
 
     image_ids = [img.id for img in images]
-    my_annotations = {
-        a.image_id: a.status.value
+    my_live = {
+        a.image_id: a
         for a in db.session.execute(
             select(ImageAnnotation).where(and_(
                 ImageAnnotation.image_id.in_(image_ids),
@@ -156,6 +180,7 @@ def get_patient(patient_code: str):
             ))
         ).scalars().all()
     }
+    my_annotations = {image_id: a.status.value for image_id, a in my_live.items()}
 
     # Reviewer rejections still awaiting a fix: the latest reject comment on this
     # user's annotation for each image whose live (non-superseded) annotation is
@@ -188,6 +213,16 @@ def get_patient(patient_code: str):
         item['my_annotation_status'] = my_annotations.get(img.id)
         item['needs_redo'] = img.id in my_rejections           # reviewer flagged, not yet redone
         item['reviewer_rejection'] = my_rejections.get(img.id)  # the reviewer's comment (may be null)
+        # Compulsory fields this user's draft still lacks (empty once complete;
+        # null when there's no draft at all). Drives the "incomplete" flag on the
+        # diagnose page so the annotator knows which images block submission.
+        live = my_live.get(img.id)
+        if live is None:
+            item['missing_fields'] = None
+        elif live.status == AnnotationStatus.draft:
+            item['missing_fields'] = completeness.missing_fields(live, img)
+        else:
+            item['missing_fields'] = []
         image_items.append(item)
 
     my_diagnosis = _load_own_diagnosis(patient_code)
@@ -269,14 +304,31 @@ def submit_diagnosis(patient_code: str):
         patch = PatientDiagnosisPatch.model_validate(body)
         _apply_fields(row, patch)
 
+    # Nothing below is committed until every check passes: the diagnosis must be
+    # fully scored, and every image draft that's about to be finalized must
+    # carry the full compulsory field set.
     PatientDiagnosisSubmit.model_validate({
+        **{f: getattr(row, f) for f in SUBMIT_REQUIRED_FIELDS},
         'colposcopic_impression': row.colposcopic_impression or [],
-        'confidence': row.confidence,
     })
+
+    drafts = _my_image_drafts(patient_code)
+    incomplete = _incomplete_drafts(drafts)
+    if incomplete:
+        n = len(incomplete)
+        plural = n != 1
+        return error_response(
+            'incomplete_annotations',
+            f'{n} image annotation{"s" if plural else ""} for this patient '
+            f'{"are" if plural else "is"} missing compulsory fields. '
+            'Fill in every field on each flagged image, then submit again.',
+            status=422,
+            details=incomplete,
+        )
 
     row.status = AnnotationStatus.submitted
     row.submitted_at = _utcnow()
-    images_finalized = _finalize_image_annotations(patient_code)
+    images_finalized = _finalize_image_annotations(drafts)
     db.session.commit()
 
     consensus.upsert_consensus_for_patient(patient_code)

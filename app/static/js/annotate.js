@@ -3,6 +3,11 @@
 // Responsibilities:
 //   - Server queue cursor through unannotated images.
 //   - Annotation lifecycle: open draft, autosave Layer-B form fields, submit/discard.
+//   - Compulsory-field tracking: every [data-required] control, the image type,
+//     and every drawn region's attributes must be filled before Next will leave
+//     the image (and before the patient can be submitted -- the server refuses
+//     otherwise, see app/services/completeness.py). The header pill, tab badges
+//     and region-row badges show what's still empty on the current image.
 //   - Konva stage for the image + region layers (Layer C).
 //   - Tools: pan/select, bbox, polygon, mask (brush paint -> png_b64 geometry).
 //   - Undo/redo command stack (limit 50).
@@ -43,6 +48,7 @@
         dirty: false,
         savePending: null,
         saveTimer: null,
+        saveInFlight: null,   // promise of the PATCH currently on the wire, if any
 
         // Konva
         stage: null,
@@ -1144,6 +1150,7 @@
         document.getElementById('regionCount').textContent = `(${state.regions.size})`;
         if (state.regions.size === 0) {
             list.innerHTML = '<div class="empty-list">No regions yet. Pick the Bbox or Polygon tool to draw.</div>';
+            renderCompleteness();
             return;
         }
         const html = [];
@@ -1160,7 +1167,7 @@
                 <div class="region-row" data-id="${region.id}" aria-selected="${region.id === state.selectedRegionId ? 'true' : 'false'}">
                     <div class="swatch" style="background:${color}"></div>
                     <div>
-                        <div>#${i} ${region.region_type} - ${label}</div>
+                        <div class="region-title">#${i} ${region.region_type} - ${label}</div>
                         <div class="meta">${detail}</div>
                     </div>
                     <button class="del-region" data-id="${region.id}" title="Delete">&times;</button>
@@ -1180,6 +1187,7 @@
                 deleteRegion(btn.dataset.id);
             });
         });
+        renderCompleteness();
     }
 
     function renderRegionEditor() {
@@ -1199,6 +1207,7 @@
             if (el.type === 'checkbox') el.checked = !!val;
             else el.value = val == null ? '' : String(val);
         });
+        renderRegionEditorMissing();
     }
 
     // Park the editor beside the selected region rather than on top of it -- it used
@@ -1495,6 +1504,7 @@
         }
         renderRegionList();
         state.regionLayer.batchDraw();
+        renderCompleteness();
     }
 
     // ---------- Queue navigation (unchanged logic from Phase 2) ----------
@@ -1593,6 +1603,167 @@
         });
         const typeSel = document.getElementById('imageTypeSelect');
         if (typeSel) typeSel.value = state.image?.image_phase || '';
+        // A fresh image: the blocked-Next notice belonged to the previous one.
+        if (nextBlocked) nextBlocked.hidden = true;
+        renderCompleteness();
+    }
+
+    // ---------- Compulsory fields ----------
+    // Mirrors app/services/completeness.py: every [data-required] control in the
+    // side panel, plus the shared image type. Checkboxes are never "missing" --
+    // unchecked simply means absent and is saved as false.
+    const requiredPill = document.getElementById('requiredPill');
+    const nextBlocked = document.getElementById('nextBlocked');
+    const imageTypeSelectEl = document.getElementById('imageTypeSelect');
+
+    // Mirrors REQUIRED_REGION_FIELDS / REGION_CONDITIONAL_FIELDS on the server.
+    const REGION_REQUIRED = ['lesion_label', 'lesion_location_clock', 'lesion_size_percent', 'lesion_quadrant', 'lesion_margins'];
+    const REGION_REQUIRED_IF = {punctation_severity: 'punctation_present', mosaic_severity: 'mosaic_present'};
+
+    function missingRegionFields(region) {
+        const missing = REGION_REQUIRED.filter(f => region[f] == null);
+        for (const [field, gate] of Object.entries(REGION_REQUIRED_IF)) {
+            if (region[gate] && region[field] == null) missing.push(field);
+        }
+        return missing;
+    }
+
+    // Image-level gaps are DOM controls; region gaps come from the server
+    // snapshots in state.regions (the editor only shows one region at a time).
+    function computeMissing() {
+        const controls = [];
+        if (imageTypeSelectEl && !imageTypeSelectEl.value) controls.push(imageTypeSelectEl);
+        document.querySelectorAll('.side [data-required]').forEach(el => {
+            if (el.value === '' || el.value == null) controls.push(el);
+        });
+        const regions = [];
+        for (const region of state.regions.values()) {
+            const fields = missingRegionFields(region);
+            if (fields.length) regions.push({id: region.id, fields});
+        }
+        const regionCount = regions.reduce((n, r) => n + r.fields.length, 0);
+        return {controls, regions, total: controls.length + regionCount};
+    }
+
+    function renderCompleteness() {
+        const missing = computeMissing();
+        const missingSet = new Set(missing.controls);
+        if (imageTypeSelectEl) imageTypeSelectEl.classList.toggle('is-missing', missingSet.has(imageTypeSelectEl));
+        document.querySelectorAll('.side [data-required]').forEach(el => {
+            el.classList.toggle('is-missing', missingSet.has(el));
+        });
+
+        // Region rows: "N left" badge per region still missing attributes.
+        const perRegion = new Map(missing.regions.map(r => [r.id, r.fields.length]));
+        document.querySelectorAll('.region-row').forEach(row => {
+            let badge = row.querySelector('.left-badge');
+            const n = perRegion.get(row.dataset.id) || 0;
+            if (n && !badge) {
+                badge = document.createElement('span');
+                badge.className = 'left-badge';
+                row.querySelector('.region-title')?.appendChild(badge);
+            }
+            if (badge) {
+                if (n) badge.textContent = `${n} left`;
+                else badge.remove();
+            }
+        });
+        renderRegionEditorMissing();
+
+        // Per-tab counts so the annotator can see where the gaps are without
+        // clicking through every tab.
+        const perTab = {};
+        for (const el of missing.controls) {
+            const tab = el.closest('.tab-content');
+            if (tab) perTab[tab.id] = (perTab[tab.id] || 0) + 1;
+        }
+        const regionGaps = missing.total - missing.controls.length;
+        if (regionGaps) perTab['tab-regions'] = regionGaps;
+        document.querySelectorAll('[data-tab-badge]').forEach(badge => {
+            const n = perTab[badge.dataset.tabBadge] || 0;
+            badge.textContent = n ? String(n) : '';
+        });
+
+        if (!missing.total && nextBlocked) nextBlocked.hidden = true;
+
+        if (!requiredPill) return;
+        if (!state.image) { requiredPill.hidden = true; return; }
+        requiredPill.hidden = false;
+        if (missing.total) {
+            requiredPill.textContent = `${missing.total} required left`;
+            requiredPill.className = 'pill incomplete';
+        } else {
+            requiredPill.textContent = 'All required filled';
+            requiredPill.className = 'pill complete';
+        }
+    }
+
+    // Highlight the empty compulsory controls of the region currently open in
+    // the editor (severity inputs only count while their checkbox is ticked).
+    function renderRegionEditorMissing() {
+        const editor = document.getElementById('regionEditor');
+        const region = state.regions.get(state.selectedRegionId);
+        if (!editor) return;
+        const fields = new Set(region ? missingRegionFields(region) : []);
+        editor.querySelectorAll('[data-rfield]').forEach(el => {
+            el.classList.toggle('is-missing', fields.has(el.dataset.rfield));
+        });
+    }
+
+    function describeMissing(missing) {
+        const n = missing.total;
+        const parts = [];
+        if (missing.controls.length) parts.push(`${missing.controls.length} form field${missing.controls.length === 1 ? '' : 's'}`);
+        if (missing.regions.length) parts.push(`${missing.regions.length} region${missing.regions.length === 1 ? '' : 's'} not fully described`);
+        return `${n} compulsory field${n === 1 ? '' : 's'} still empty (${parts.join(', ')}). Fill them in before moving on.`;
+    }
+
+    // Take the annotator to the first gap: the tab holding the control, or the
+    // region whose editor still has empty fields.
+    function focusFirstMissing(missing) {
+        const first = missing.controls[0];
+        if (first) {
+            const tab = first.closest('.tab-content');
+            if (tab && typeof switchTab === 'function') switchTab(tab.id);
+            first.closest('details')?.setAttribute('open', '');
+            first.focus({preventScroll: false});
+            first.scrollIntoView({block: 'center', behavior: 'smooth'});
+            return;
+        }
+        const region = missing.regions[0];
+        if (region) {
+            if (typeof switchTab === 'function') switchTab('tab-regions');
+            selectRegion(region.id);
+            const el = document.querySelector(`#regionEditor [data-rfield="${region.fields[0]}"]`);
+            el?.focus();
+        }
+    }
+
+    // Next is a hard stop while anything compulsory is empty. Read-only rows
+    // (already submitted) are exempt: their fields can't be edited here.
+    function nextGateBlocks() {
+        const editable = !state.annotation?.id || state.annotation.status === 'draft';
+        if (!editable) return false;
+        const missing = computeMissing();
+        if (!missing.total) return false;
+        renderCompleteness();
+        if (nextBlocked) {
+            nextBlocked.textContent = describeMissing(missing);
+            nextBlocked.hidden = false;
+        }
+        showHUD(`${missing.total} required field${missing.total === 1 ? '' : 's'} left`);
+        focusFirstMissing(missing);
+        return true;
+    }
+
+    // Explicit false for every checkbox on the form, so a draft never carries a
+    // NULL boolean just because the annotator didn't touch the box.
+    function checkboxSnapshot() {
+        const snap = {};
+        document.querySelectorAll('.side [data-field][type="checkbox"]').forEach(el => {
+            setNested(snap, el.dataset.field, el.checked);
+        });
+        return snap;
     }
 
     function collectPatchFromField(el) {
@@ -1607,7 +1778,11 @@
     }
 
     function queueAutosave(patch) {
-        if (state.annotation && state.annotation.status !== 'draft') {
+        // Only a row the server has handed back carries a status; a local,
+        // not-yet-created draft ({} or partial) must stay editable, otherwise
+        // every edit after the first one on a fresh image is dropped until the
+        // debounced create round-trips.
+        if (state.annotation?.id && state.annotation.status !== 'draft') {
             setPill('Read-only', '');
             return;
         }
@@ -1623,12 +1798,23 @@
     }
 
     async function flushSave() {
+        // Serialize: the debounce timer and an explicit flush (Save / Next) can
+        // both land here, and two concurrent first-saves would each try to
+        // create the draft.
+        if (state.saveInFlight) await state.saveInFlight;
         if (!state.savePending) return;
+        const run = flushSaveNow();
+        state.saveInFlight = run;
+        try { await run; } finally { state.saveInFlight = null; }
+    }
+
+    async function flushSaveNow() {
         const body = state.savePending;
         state.savePending = null;
         setPill('Saving...', 'saving');
         try {
             // Lazily create the draft now that we have something to persist.
+            let patchBody = body;
             if (!state.annotation?.id) {
                 const created = await api('/api/v1/annotations', {
                     method: 'POST',
@@ -1637,10 +1823,16 @@
                 // Preserve any local edits the user already made while we were id-less.
                 const local = state.annotation || {};
                 state.annotation = deepMerge(created, local);
+                // First save of a fresh draft: pin every checkbox to an explicit
+                // boolean (the user's own edits win over the snapshot).
+                if (created.status === 'draft') {
+                    patchBody = deepMerge(checkboxSnapshot(), body);
+                    deepMerge(state.annotation, patchBody);
+                }
             }
             await api(`/api/v1/annotations/${state.annotation.id}`, {
                 method: 'PATCH',
-                body: JSON.stringify(body),
+                body: JSON.stringify(patchBody),
             });
             state.dirty = false;
             setPill('Saved', 'saved');
@@ -1658,6 +1850,7 @@
         const evt = (el.tagName === 'SELECT' || el.type === 'checkbox') ? 'change' : 'input';
         el.addEventListener(evt, () => {
             queueAutosave(collectPatchFromField(el));
+            renderCompleteness();
         });
     });
 
@@ -1674,6 +1867,7 @@
                 });
                 state.image.image_phase = updated.image_phase;
                 renderMeta();
+                renderCompleteness();
                 showHUD('Image type saved');
             } catch (err) {
                 alert('Failed to save image type: ' + err.message);
@@ -1746,10 +1940,18 @@
         await flushPendingSave();
         loadIndex(state.queueIndex - 1);
     });
-    document.getElementById('nextBtn').addEventListener('click', async () => {
+    async function goNext() {
         await flushPendingSave();
+        // A failed autosave leaves the edits pending; don't walk away from them.
+        if (state.savePending) {
+            setPill('Error - retry', 'error');
+            showHUD('Save failed — try again before moving on');
+            return;
+        }
+        if (nextGateBlocks()) return;
         loadIndex(state.queueIndex + 1);
-    });
+    }
+    document.getElementById('nextBtn').addEventListener('click', goNext);
     document.getElementById('saveBtn').addEventListener('click', flushPendingSave);
     document.getElementById('discardBtn').addEventListener('click', async () => {
         const reason = prompt('Reason for discarding this image:');
@@ -1839,7 +2041,7 @@
             return;
         }
         if (e.key === '[') { loadIndex(state.queueIndex - 1); return; }
-        if (e.key === ']') { loadIndex(state.queueIndex + 1); return; }
+        if (e.key === ']') { goNext(); return; }
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
             e.preventDefault();
             if (state.saveTimer) { clearTimeout(state.saveTimer); state.saveTimer = null; }

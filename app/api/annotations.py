@@ -30,7 +30,7 @@ from app.schemas.annotation import (
     AnnotationPatch,
     DiscardRequest,
 )
-from app.services import storage
+from app.services import completeness, storage
 from app.services.crop import render_annotated_bytes, render_crop_bytes
 
 bp = Blueprint('annotations', __name__, url_prefix='/api/v1/annotations')
@@ -316,13 +316,24 @@ def submit(annotation_id: str):
             status=409,
         )
 
-    # Final autosave-like merge before submitting. Per-image diagnosis is optional
-    # (the FINAL diagnosis lives at the patient level, see app/api/patients.py), so
-    # there's nothing left to require here beyond a valid patch shape.
+    # Final autosave-like merge before submitting. The FINAL diagnosis lives at
+    # the patient level (see app/api/patients.py); what IS required here is the
+    # full compulsory field set, so every submitted row is training-ready.
     body = request.get_json(silent=True) or {}
     if body:
         patch = AnnotationPatch.model_validate(body)
         _apply_blocks(ann, patch)
+
+    missing = completeness.missing_fields(ann)
+    if missing:
+        return error_response(
+            'incomplete_annotation',
+            'Missing compulsory fields: ' + completeness.describe_missing(missing) + '.',
+            status=422,
+            details=[{'image_id': ann.image_id, 'annotation_id': ann.id,
+                      'missing_fields': missing, 'msg': completeness.describe_missing(missing)}],
+        )
+    completeness.normalize_checkboxes(ann)
 
     ann.status = AnnotationStatus.submitted
     ann.submitted_at = _utcnow()

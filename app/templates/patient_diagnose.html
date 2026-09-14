@@ -88,6 +88,22 @@
         background: var(--danger);
         box-shadow: 0 1px 3px rgba(0,0,0,0.3);
     }
+    /* Draft still missing compulsory fields: blocks the patient submit until fixed. */
+    .img-card.incomplete { border-color: var(--warning); }
+    .img-card .incomplete-flag {
+        position: absolute;
+        top: 6px;
+        left: 6px;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 3px 7px;
+        border-radius: var(--r-full);
+        color: white;
+        background: var(--warning);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .req { color: var(--danger); font-weight: 700; margin-left: 2px; }
+    .score-body select.is-missing { border-color: var(--warning); box-shadow: inset 3px 0 0 var(--warning); }
     .img-card .type-chip {
         position: absolute;
         bottom: 6px;
@@ -225,10 +241,11 @@
 
         <div class="card">
             <h2>Final diagnosis</h2>
-            <p class="card-sub">One diagnosis per annotator for this patient. Once submitted it can't be edited further.</p>
+            <p class="card-sub">One diagnosis per annotator for this patient. Once submitted it can't be edited further.
+                Fields marked <span class="req">*</span> are compulsory, and every image you've started must have all of its compulsory fields filled before you can submit.</p>
             <fieldset id="dxForm">
                 <div class="field">
-                    <label>Colposcopic impression <span class="muted">(select all that apply)</span></label>
+                    <label>Colposcopic impression<span class="req">*</span> <span class="muted">(select all that apply)</span></label>
                     <div id="dxGrid">
                         <div class="dx-category">
                             <div class="dx-category-title">Benign</div>
@@ -258,7 +275,7 @@
                 </div>
                 <div class="field">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <label style="margin: 0;">Confidence</label>
+                        <label style="margin: 0;">Confidence<span class="req">*</span></label>
                         <span class="muted tabular" id="confidenceLabel">-</span>
                     </div>
                     <input type="range" id="confidence" min="1" max="5" value="3" aria-label="Diagnosis confidence, 1 to 5">
@@ -327,9 +344,9 @@
                 </div>
 
                 <div class="form-section">
-                    <div class="form-section-title">Colposcopic scoring <span style="text-transform:none; letter-spacing:0; font-weight:400;">(optional)</span></div>
-                    <details class="score-section">
-                        <summary>Reid Colposcopic Index <span class="score-total" id="reidTotal">&ndash; / 8</span></summary>
+                    <div class="form-section-title">Colposcopic scoring<span class="req">*</span> <span style="text-transform:none; letter-spacing:0; font-weight:400;">(every criterion is compulsory to submit)</span></div>
+                    <details class="score-section" open>
+                        <summary>Reid Colposcopic Index<span class="req">*</span> <span class="score-total" id="reidTotal">&ndash; / 8</span></summary>
                         <div class="score-body">
                             <label for="reid_margin">Margin</label>
                             <select id="reid_margin">
@@ -363,8 +380,8 @@
                         </div>
                     </details>
 
-                    <details class="score-section">
-                        <summary>Swede Score <span class="score-total" id="swedeTotal">&ndash; / 10</span></summary>
+                    <details class="score-section" open>
+                        <summary>Swede Score<span class="req">*</span> <span class="score-total" id="swedeTotal">&ndash; / 10</span></summary>
                         <div class="score-body">
                             <label for="swede_aceto">Acetowhite uptake</label>
                             <select id="swede_aceto">

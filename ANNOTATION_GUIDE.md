@@ -59,11 +59,22 @@ Go to `/annotate`. The platform serves the next unannotated image. You can also 
 
 ### Step 2 — Fill in the Annotation Form
 
-The form is grouped into four blocks. Fields marked **\*** are required to submit (draft saves are allowed at any point).
+The form is grouped into four blocks. Fields marked **\*** are **compulsory**: drafts can be saved at any point with gaps, but an image cannot be finalized until every marked field is filled. This keeps every exported row on the same column set so the training data stays consistent.
+
+Where it's enforced:
+
+- **Next** on the annotate page (button, `]`, Enter) refuses to leave an image while anything compulsory is empty: it jumps to the tab or region holding the first gap, focuses it, and shows what's missing. Prev is never blocked, so you can always go back to fix an earlier image. Already-submitted (read-only) images are exempt.
+- **Submit diagnosis** on the patient page finalizes every image draft, and is refused with a per-image list of what's still missing. The patient page flags each incomplete image with an "N left" badge.
+
+On the annotate page the header pill shows how many compulsory fields are still empty on the current image, each tab shows its own count, and each region row shows its own.
+
+Also compulsory: the **Image type** (baseline / VIA / VILI / green filter / unknown), which is shared by all annotators of the image.
 
 ---
 
 ### Block A: Image Quality
+
+Shown to reviewers and admins only, so it is *not* compulsory (annotators never see it).
 
 | Field | Type | Values |
 |-------|------|--------|
@@ -83,9 +94,16 @@ If `usable_for_training` is unchecked, the image is excluded from all exports.
 
 | Field | Type | Values | Notes |
 |-------|------|--------|-------|
-| `scj_visibility` | Enum | `fully_visible`, `partial`, `not_visible` | Squamocolumnar junction |
-| `transformation_zone_type` | Enum | `TZ1`, `TZ2`, `TZ3`, `unknown` | IFCPC TZ classification |
-| `tz_visibility` | Enum | `fully_visible`, `partial`, `not_visible` | |
+| `scj_visibility` **\*** | Enum | `fully_visible`, `partial`, `not_visible` | Squamocolumnar junction |
+| `transformation_zone_type` **\*** | Enum | `TZ1`, `TZ2`, `TZ3`, `unknown` | IFCPC TZ classification |
+| `tz_visibility` **\*** | Enum | `fully_visible`, `partial`, `not_visible` | |
+
+### Block B2: IFCPC Assessment (this image)
+
+| Field | Type | Values |
+|-------|------|--------|
+| `ifcpc_grade` **\*** | Enum | `normal`, `minor`, `major`, `suspicious_invasion`, `miscellaneous` |
+| `colposcopy_adequacy` **\*** | Enum | `adequate`, `inadequate` |
 
 ---
 
@@ -93,27 +111,32 @@ If `usable_for_training` is unchecked, the image is excluded from all exports.
 
 | Field | Type | Range / Values | Notes |
 |-------|------|----------------|-------|
-| `acetowhitening_severity` | Integer | 0 – 3 | 0 = none, 3 = intense white |
-| `iodine_pattern` | Integer | 0 – 2 | 0 = normal brown, 2 = mustard yellow (iodine-negative) |
-| `vascular_pattern` | Enum | `normal`, `fine_punctation`, `coarse_punctation`, `fine_mosaic`, `coarse_mosaic`, `atypical` | |
-| `color_tone` | Enum | `pink`, `pale`, `dense_white`, `yellow` | |
-| `surface_contour` | Enum | `smooth`, `micropapillary`, `nodular`, `ulcerated` | |
-| `atypical_vessels_present` | Boolean | | Indicates high-grade/invasive disease |
+| `acetowhitening_severity` **\*** | Integer | 0 – 3 | 0 = none, 3 = intense white |
+| `iodine_pattern` **\*** | Integer | 0 – 2 | 0 = normal brown, 2 = mustard yellow (iodine-negative) |
+| `vascular_pattern` **\*** | Enum | `normal`, `fine_punctation`, `coarse_punctation`, `fine_mosaic`, `coarse_mosaic`, `atypical` | |
+| `color_tone` **\*** | Enum | `pink`, `pale`, `dense_white`, `yellow` | |
+| `surface_contour` **\*** | Enum | `smooth`, `micropapillary`, `nodular`, `ulcerated` | |
+| `atypical_vessels_present` | Boolean | | Checkbox; unchecked is saved as `false` (never null). Indicates high-grade/invasive disease |
 
 ---
 
-### Block D: Diagnosis
+### Block D: Diagnosis (per patient, on `/patients/{code}/diagnose`)
 
 | Field | Type | Values | Notes |
 |-------|------|--------|-------|
-| `colposcopic_impression` **\*** | Enum | `NORMAL`, `CIN1`, `CIN2`, `CIN3`, `AIS`, `INVASIVE_CANCER` | Required to submit |
-| `histopathology_result` | Enum | Same as above | Fill in if biopsy result is known |
+| `colposcopic_impression` **\*** | Enum list | `NORMAL`, `CIN1`, `CIN2`, `CIN3`, `AIS`, `INVASIVE_CANCER`, `INFLAMMATION`, `INFECTION`, `EROSION` | Select all that apply |
 | `confidence` **\*** | Integer | 1 – 5 | 1 = very uncertain, 5 = certain |
+| `reid_margin`, `reid_color`, `reid_vessels`, `reid_iodine` **\*** | Integer | 0 – 2 each | Reid Colposcopic Index (total / 8) |
+| `swede_aceto`, `swede_margin`, `swede_vessels`, `swede_size`, `swede_iodine` **\*** | Integer | 0 – 2 each | Swede Score (total / 10) |
+| `histopathology_result` | Enum | Same as impression | Fill in if biopsy result is known |
+| `cytology_result`, `hpv_status`, `management_recommendation`, `biopsy_taken` | Enum / Boolean | | Screening context; optional |
 | `notes` | Text | Max 4000 chars | Clinical observations |
 
 ---
 
 ### Step 3 — Draw Lesion Regions (Optional but Recommended)
+
+Regions themselves are optional (a normal cervix has none), but **every region you draw must be fully described** — the COCO/YOLO/mask exporters key a region's class on its `lesion_label` and skip unlabeled ones, so a half-filled region is a lesion the model never sees. The compulsory region fields below count toward the Next gate and the patient submit exactly like the image-level ones.
 
 For each visible lesion, draw a region on the image using the canvas tools:
 
@@ -126,15 +149,15 @@ For each visible lesion, draw a region on the image using the canvas tools:
 
 | Field | Type | Values / Range |
 |-------|------|----------------|
-| `lesion_label` | Enum | `NORMAL`, `CIN1`, `CIN2`, `CIN3`, `AIS`, `INVASIVE_CANCER` |
-| `lesion_location_clock` | Integer | 1 – 12 (clock position on cervix) |
-| `lesion_quadrant` | Enum | `anterior`, `posterior`, `left_lateral`, `right_lateral`, `circumferential` |
-| `lesion_size_percent` | Integer | 0 – 100 (% of visible transformation zone) |
-| `lesion_margins` | Enum | `sharp`, `irregular` |
-| `punctation_present` | Boolean | |
-| `punctation_severity` | Integer | 1 – 3 |
-| `mosaic_present` | Boolean | |
-| `mosaic_severity` | Integer | 1 – 3 |
+| `lesion_label` **\*** | Enum | `NORMAL`, `CIN1`, `CIN2`, `CIN3`, `AIS`, `INVASIVE_CANCER`, `INFLAMMATION`, `INFECTION`, `EROSION` |
+| `lesion_location_clock` **\*** | Integer | 1 – 12 (clock position on cervix) |
+| `lesion_quadrant` **\*** | Enum | `anterior`, `posterior`, `left_lateral`, `right_lateral`, `circumferential` |
+| `lesion_size_percent` **\*** | Integer | 0 – 100 (% of visible transformation zone) |
+| `lesion_margins` **\*** | Enum | `sharp`, `irregular` |
+| `punctation_present` | Boolean | Checkbox; unchecked is saved as `false` |
+| `punctation_severity` | Integer | 1 – 3; **compulsory when `punctation_present` is ticked** |
+| `mosaic_present` | Boolean | Checkbox; unchecked is saved as `false` |
+| `mosaic_severity` | Integer | 1 – 3; **compulsory when `mosaic_present` is ticked** |
 | `region_notes` | Text | Max 4000 chars |
 
 Multiple regions can be drawn per image. Each region is saved separately and linked to the image annotation.
@@ -145,8 +168,8 @@ Multiple regions can be drawn per image. Each region is saved separately and lin
 
 | Action | Effect |
 |--------|--------|
-| **Autosave** | Saves all fields as a draft; you can return and edit later |
-| **Submit** | Finalizes the annotation (requires `colposcopic_impression` + `confidence`); locked for editing after submission |
+| **Autosave** | Saves all fields as a draft; you can return and edit later, gaps allowed |
+| **Submit diagnosis** (patient page) | Finalizes the diagnosis *and* every image draft you have for that patient. Refused (HTTP 422 `incomplete_annotations`) while any of those drafts is missing a compulsory field, or while the diagnosis lacks impression / confidence / Reid / Swede. Locked for editing after submission |
 | **Discard** | Marks the image as unusable and records a reason; image is excluded from exports |
 
 ---
