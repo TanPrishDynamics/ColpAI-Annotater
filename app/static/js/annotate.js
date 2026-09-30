@@ -1202,10 +1202,9 @@
             if (state.tool !== 'pan') return;
             document.body.style.cursor = 'pointer';
             const label = region.lesion_label || 'Unlabeled';
-            const size = region.lesion_size_percent ? ` - ${region.lesion_size_percent}%` : '';
             const tooltip = document.getElementById('hoverTooltip');
             if (tooltip) {
-                tooltip.textContent = `${label}${size}`;
+                tooltip.textContent = label;
                 tooltip.style.display = 'block';
                 const pos = state.stage.getPointerPosition();
                 if (pos) {
@@ -1765,7 +1764,7 @@
     const imageTypeSelectEl = document.getElementById('imageTypeSelect');
 
     // Mirrors REQUIRED_REGION_FIELDS / REGION_CONDITIONAL_FIELDS on the server.
-    const REGION_REQUIRED = ['lesion_label', 'lesion_location_clock', 'lesion_size_percent', 'lesion_quadrant', 'lesion_margins'];
+    const REGION_REQUIRED = ['lesion_label', 'lesion_location_clock', 'lesion_quadrant', 'lesion_margins'];
     const REGION_REQUIRED_IF = {punctation_severity: 'punctation_present', mosaic_severity: 'mosaic_present'};
 
     function missingRegionFields(region) {

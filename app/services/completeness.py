@@ -43,8 +43,7 @@ CHECKBOX_FIELDS: tuple[str, ...] = ('atypical_vessels_present',)
 # the 1-based position in the region list (creation order), matching the "#n"
 # the annotate page shows.
 REQUIRED_REGION_FIELDS: tuple[str, ...] = (
-    'lesion_label', 'lesion_location_clock', 'lesion_size_percent',
-    'lesion_quadrant', 'lesion_margins',
+    'lesion_label', 'lesion_location_clock', 'lesion_quadrant', 'lesion_margins',
 )
 REGION_CHECKBOX_FIELDS: tuple[str, ...] = ('punctation_present', 'mosaic_present')
 # A severity is only meaningful (and only required) when its feature is present.
@@ -69,7 +68,6 @@ FIELD_LABELS: dict[str, str] = {
     'features.atypical_vessels_present': 'Atypical vessels present',
     'region.lesion_label': 'Lesion label',
     'region.lesion_location_clock': 'Clock',
-    'region.lesion_size_percent': 'Size %',
     'region.lesion_quadrant': 'Quadrant',
     'region.lesion_margins': 'Margins',
     'region.punctation_severity': 'Punctation severity',

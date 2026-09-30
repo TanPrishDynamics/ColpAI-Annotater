@@ -152,7 +152,6 @@ For each visible lesion, draw a region on the image using the canvas tools:
 | `lesion_label` **\*** | Enum | `NORMAL`, `CIN1`, `CIN2`, `CIN3`, `AIS`, `INVASIVE_CANCER`, `INFLAMMATION`, `INFECTION`, `EROSION` |
 | `lesion_location_clock` **\*** | Integer | 1 – 12 (clock position on cervix) |
 | `lesion_quadrant` **\*** | Enum | `anterior`, `posterior`, `left_lateral`, `right_lateral`, `circumferential` |
-| `lesion_size_percent` **\*** | Integer | 0 – 100 (% of visible transformation zone) |
 | `lesion_margins` **\*** | Enum | `sharp`, `irregular` |
 | `punctation_present` | Boolean | Checkbox; unchecked is saved as `false` |
 | `punctation_severity` | Integer | 1 – 3; **compulsory when `punctation_present` is ticked** |
