@@ -68,6 +68,11 @@
         // Crop region (per-annotation). Konva node lives on the region layer.
         cropNode: null,
 
+        // Clock-position overlay (view aid only, never saved). Centre/radius are in
+        // image px; `on` is remembered per browser.
+        clockLayer: null,
+        clock: {on: false, cx: 0, cy: 0, r: 0, dial: null, centerHandle: null, rimHandle: null},
+
         // In-flight polygon draft (no server id yet)
         polygonDraft: null,
 
@@ -186,10 +191,14 @@
         });
         state.imageLayer = new Konva.Layer({listening: false});
         state.regionLayer = new Konva.Layer();
+        state.clockLayer = new Konva.Layer({listening: state.tool === 'pan', visible: state.clock.on});
         state.toolLayer = new Konva.Layer();
         state.stage.add(state.imageLayer);
         state.stage.add(state.regionLayer);
+        state.stage.add(state.clockLayer);
         state.stage.add(state.toolLayer);
+        // Keep the clock's highlighted sector under a region while it's moved.
+        state.regionLayer.on('dragmove.clock transform.clock', drawClockDial);
 
         state.transformer = makeTransformer();
         state.regionLayer.add(state.transformer);
@@ -717,6 +726,141 @@
         }
     }
 
+    // ---------- Clock-position overlay ----------
+    // A clock face to read a lesion's clock position: 12 at the top, running
+    // clockwise as viewed. It lives in image coordinates so it pans and zooms with
+    // the image. Drag the centre dot onto the external os and the rim dot to resize.
+    // The hour sector under the selected region is highlighted.
+    const CLOCK_PREF_KEY = 'colpai.clockOverlay';
+    try { state.clock.on = localStorage.getItem(CLOCK_PREF_KEY) === '1'; } catch (e) { /* storage blocked */ }
+
+    function clockHourAt(x, y) {
+        const c = state.clock;
+        const deg = (Math.atan2(x - c.cx, c.cy - y) * 180 / Math.PI + 360) % 360;
+        return (Math.round(deg / 30) % 12) || 12;
+    }
+
+    // Hour under the selected region's centre, or null. Masks are full-frame nodes,
+    // so their bounding box says nothing about where the lesion is.
+    function selectedRegionHour() {
+        const region = state.regions.get(state.selectedRegionId);
+        const node = state.nodes.get(state.selectedRegionId);
+        if (!region || !node || region.region_type === 'mask') return null;
+        const r = node.getClientRect({relativeTo: state.regionLayer});
+        const x = r.x + r.width / 2, y = r.y + r.height / 2;
+        if (Math.hypot(x - state.clock.cx, y - state.clock.cy) < 1) return null;
+        return clockHourAt(x, y);
+    }
+
+    function buildClock() {
+        const c = state.clock;
+        state.clockLayer.destroyChildren();
+        c.dial = c.centerHandle = c.rimHandle = null;
+        const dims = imageDims();
+        if (!dims || !dims.w || !dims.h) return;
+        c.cx = dims.w / 2;
+        c.cy = dims.h / 2;
+        c.r = Math.min(dims.w, dims.h) * 0.42;
+
+        c.dial = new Konva.Group({listening: false});
+        const handle = (cursor) => {
+            const h = new Konva.Circle({
+                draggable: true,
+                fill: '#4f8cff',
+                stroke: '#fff',
+                strokeWidth: 2,
+                strokeScaleEnabled: false,
+                shadowColor: 'black',
+                shadowBlur: 4,
+                shadowOpacity: 0.5,
+            });
+            h.on('mouseenter', () => { stageWrap.style.cursor = cursor; });
+            h.on('mouseleave', () => { stageWrap.style.cursor = ''; });
+            return h;
+        };
+        c.centerHandle = handle('move');
+        c.centerHandle.on('dragmove', () => {
+            c.cx = c.centerHandle.x();
+            c.cy = c.centerHandle.y();
+            drawClockDial();
+        });
+        c.rimHandle = handle('nesw-resize');
+        c.rimHandle.on('dragmove', () => {
+            c.r = Math.max(20, Math.hypot(c.rimHandle.x() - c.cx, c.rimHandle.y() - c.cy));
+            drawClockDial({keepRim: true});
+        });
+        c.rimHandle.on('dragend', () => drawClockDial());
+        state.clockLayer.add(c.dial, c.rimHandle, c.centerHandle);
+        drawClockDial();
+    }
+
+    function drawClockDial(opts = {}) {
+        const c = state.clock;
+        if (!c.dial || !c.on) return;
+        c.dial.destroyChildren();
+        c.dial.position({x: c.cx, y: c.cy});
+
+        const shadow = {shadowColor: 'black', shadowBlur: 3, shadowOpacity: 0.7};
+        const hl = selectedRegionHour();
+        if (hl) {
+            c.dial.add(new Konva.Wedge({
+                radius: c.r, angle: 30, rotation: hl * 30 - 105,
+                fill: 'rgba(79, 140, 255, 0.3)',
+            }));
+        }
+        c.dial.add(new Konva.Circle({
+            radius: c.r, stroke: 'rgba(255,255,255,0.9)', strokeWidth: 2,
+            strokeScaleEnabled: false, ...shadow,
+        }));
+
+        const fontSize = c.r * 0.11;
+        for (let h = 1; h <= 12; h++) {
+            const a = (h * 30 - 90) * Math.PI / 180;
+            const cos = Math.cos(a), sin = Math.sin(a);
+            c.dial.add(new Konva.Line({
+                points: [0, 0, cos * c.r * 0.76, sin * c.r * 0.76],
+                stroke: 'rgba(255,255,255,0.55)',
+                strokeWidth: h % 3 === 0 ? 1.5 : 1,
+                dash: h % 3 === 0 ? [] : [6, 5],
+                strokeScaleEnabled: false,
+            }));
+            c.dial.add(new Konva.Text({
+                x: cos * c.r * 0.87, y: sin * c.r * 0.87,
+                text: String(h),
+                fontSize, fontStyle: 'bold',
+                width: fontSize * 2, align: 'center',
+                offsetX: fontSize, offsetY: fontSize / 2,
+                fill: h === hl ? '#ffd166' : '#fff',
+                ...shadow,
+            }));
+        }
+
+        const handleR = Math.max(c.r * 0.035, 4);
+        c.centerHandle.radius(handleR);
+        c.rimHandle.radius(handleR);
+        c.centerHandle.position({x: c.cx, y: c.cy});
+        // Park the rim handle at 1:30, off the 12/3 labels; leave it under the
+        // pointer while it's being dragged.
+        if (!opts.keepRim) {
+            const a = -45 * Math.PI / 180;
+            c.rimHandle.position({x: c.cx + Math.cos(a) * c.r, y: c.cy + Math.sin(a) * c.r});
+        }
+        state.clockLayer.batchDraw();
+    }
+
+    function toggleClock() {
+        const c = state.clock;
+        c.on = !c.on;
+        try { localStorage.setItem(CLOCK_PREF_KEY, c.on ? '1' : '0'); } catch (e) { /* storage blocked */ }
+        document.getElementById('clockBtn')?.setAttribute('aria-pressed', c.on ? 'true' : 'false');
+        state.clockLayer.visible(c.on);
+        if (c.on) drawClockDial();
+        state.clockLayer.batchDraw();
+    }
+
+    document.getElementById('clockBtn')?.setAttribute('aria-pressed', state.clock.on ? 'true' : 'false');
+    document.getElementById('clockBtn')?.addEventListener('click', toggleClock);
+
     // ---------- Mask brush helpers ----------
     function imageDims() {
         const img = state.imageLayer && state.imageLayer.findOne('Image');
@@ -933,6 +1077,8 @@
     function setTool(name) {
         state.tool = name;
         state.stage.draggable(name === 'pan');
+        // Clock handles are only grabbable under Pan, so they never eat a draw stroke.
+        if (state.clockLayer) state.clockLayer.listening(name === 'pan');
         document.querySelectorAll('#toolDock button[data-tool]').forEach(b => {
             b.setAttribute('aria-pressed', b.dataset.tool === name ? 'true' : 'false');
         });
@@ -1143,6 +1289,7 @@
         }
         state.regionLayer.batchDraw();
         renderRegionEditor();
+        drawClockDial();
     }
 
     function renderRegionList() {
@@ -1494,6 +1641,7 @@
         state.imageLayer.add(kImg);
         viewerEmpty.dataset.show = 'false';
         fitImage();
+        buildClock();
     }
 
     function loadRegionsForCurrentAnnotation() {
@@ -2074,6 +2222,7 @@
         if (lower === 'p') { setTool('polygon'); return; }
         if (lower === 'm') { setTool('mask'); return; }
         if (lower === 'c') { setTool('crop'); return; }
+        if (lower === 'k') { toggleClock(); return; }
         if (lower === 'e' && state.tool === 'mask') { toggleErase(); return; }
         if (lower === 'd') { document.getElementById('discardBtn').click(); return; }
     });

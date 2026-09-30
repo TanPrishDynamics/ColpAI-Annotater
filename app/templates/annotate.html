@@ -203,6 +203,9 @@
     }
     .icon-btn svg { width: 19px; height: 19px; fill: currentColor; }
     .icon-btn:hover { background: var(--surface); color: var(--accent); }
+    .icon-btn[aria-pressed="true"],
+    .icon-btn[aria-pressed="true"]:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .overlay-btns { display: flex; gap: 8px; }
     .metadata-panel {
         background: rgba(255, 255, 255, 0.97);
         border: 1px solid var(--border);
@@ -541,9 +544,14 @@
         </div>
         <div id="stage"></div>
         <div class="metadata-overlay">
-            <button class="icon-btn" id="infoBtn" title="Image Metadata">
-                <svg viewBox="0 0 24 24"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
-            </button>
+            <div class="overlay-btns">
+                <button class="icon-btn" id="clockBtn" aria-pressed="false" title="K - Clock position overlay (drag the centre dot onto the os)">
+                    <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm1-13h-2v6.4l4.6 2.8 1-1.7-3.6-2.1z"/></svg>
+                </button>
+                <button class="icon-btn" id="infoBtn" title="Image Metadata">
+                    <svg viewBox="0 0 24 24"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
+                </button>
+            </div>
             <div class="metadata-panel" id="metadataPanel" style="display:none;">
                 <div class="muted" id="meta" style="font-size: 12px; line-height: 1.7;">Loading...</div>
             </div>
@@ -919,6 +927,7 @@
         <h2>Keyboard shortcuts</h2>
         <table>
             <tr><td><kbd>V</kbd> / <kbd>B</kbd> / <kbd>P</kbd></td><td>Pan / Bbox / Polygon tool</td></tr>
+            <tr><td><kbd>K</kbd></td><td>Toggle clock-position overlay</td></tr>
             <tr><td><kbd>Del</kbd></td><td>Delete selected region</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Redo</td></tr>
